@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Vite build/cache
+dist/
+.vite/
+
+# Environment files - keep example tracked
+.env
+.env.*
+!.env.example
+
+# Logs and coverage
+*.log
+coverage/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

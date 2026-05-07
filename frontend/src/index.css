@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-950 text-ink-100 font-sans antialiased;
+    background-image: theme('backgroundImage.page-glow');
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar - keeps the dark theme cohesive */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); background-clip: padding-box; }
+
+  /* Selection */
+  ::selection { background: rgba(77,82,245,0.35); color: #fff; }
+
+  /* Number inputs - kill spinners for cleaner look */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  /* Glass card - the workhorse surface. */
+  .glass {
+    @apply relative bg-glass backdrop-blur-xl border border-white/[0.06] shadow-glass rounded-3xl;
+  }
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 30%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .glass-strong {
+    @apply relative bg-glass-strong backdrop-blur-xl border border-white/[0.08] shadow-glass-lg rounded-3xl;
+  }
+  .glass-strong::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 35%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Soft pastel stat tile - like the diamond cards in the reference */
+  .stat-tile {
+    @apply relative overflow-hidden rounded-3xl backdrop-blur-xl;
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.20) inset,
+      0 0 0 1px rgba(255,255,255,0.06),
+      0 20px 40px -12px rgba(0,0,0,0.55);
+  }
+  .stat-tile-mint  { @apply bg-tile-mint;  }
+  .stat-tile-peach { @apply bg-tile-peach; }
+  .stat-tile-cream { @apply bg-tile-cream; }
+  .stat-tile-rose  { @apply bg-tile-rose;  }
+  .stat-tile-sky   { @apply bg-tile-sky;   }
+  .stat-tile-iris  { @apply bg-tile-iris;  }
+
+  /* The translucent diamond ornaments inside stat tiles (decorative) */
+  .stat-diamond {
+    position: absolute;
+    width: 90%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: linear-gradient(135deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.05) 100%);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 28%;
+    pointer-events: none;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn text-white;
+    background-image: linear-gradient(135deg, #6470ff 0%, #4d52f5 100%);
+    box-shadow: 0 1px 0 0 rgba(255,255,255,0.20) inset,
+                0 0 0 1px rgba(138,152,255,0.45),
+                0 8px 24px -6px rgba(77,82,245,0.55);
+  }
+  .btn-primary:hover {
+    background-image: linear-gradient(135deg, #7d87ff 0%, #5a5ffa 100%);
+    box-shadow: 0 1px 0 0 rgba(255,255,255,0.25) inset,
+                0 0 0 1px rgba(138,152,255,0.55),
+                0 12px 32px -6px rgba(77,82,245,0.65);
+  }
+  .btn-secondary {
+    @apply btn text-ink-100 bg-white/[0.06] border border-white/10 hover:bg-white/[0.10] hover:border-white/20 backdrop-blur-md;
+  }
+  .btn-ghost {
+    @apply btn text-ink-200 hover:text-ink-100 hover:bg-white/[0.05];
+  }
+  .btn-danger {
+    @apply btn text-white;
+    background-image: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    box-shadow: 0 1px 0 0 rgba(255,255,255,0.20) inset,
+                0 0 0 1px rgba(239,68,68,0.45),
+                0 8px 24px -6px rgba(220,38,38,0.55);
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-ink-100 text-sm placeholder:text-ink-400 transition;
+  }
+  .input:focus {
+    @apply outline-none bg-white/[0.06] border-iris-400/60;
+    box-shadow: 0 0 0 3px rgba(77,82,245,0.20);
+  }
+  select.input { @apply pr-9 appearance-none bg-no-repeat; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238590b5'%3e%3cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 011.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3e%3c/svg%3e"); background-position: right 0.75rem center; background-size: 1.1rem; }
+  textarea.input { @apply min-h-[80px] resize-y; }
+
+  .label {
+    @apply block text-xs font-medium text-ink-300 mb-1.5 uppercase tracking-wider;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border;
+  }
+
+  /* Tables */
+  .table-th {
+    @apply text-left px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400 border-b border-white/[0.06];
+  }
+  .table-td {
+    @apply px-5 py-3.5 text-sm text-ink-200 border-b border-white/[0.04];
+  }
+  tbody tr { @apply transition; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody tr:last-child .table-td { @apply border-b-0; }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition relative;
+    color: theme('colors.ink.300');
+  }
+  .nav-item:hover { color: theme('colors.ink.100'); background: rgba(255,255,255,0.04); }
+  .nav-item.active {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(77,82,245,0.20) 0%, rgba(77,82,245,0.05) 100%);
+    box-shadow: 0 0 0 1px rgba(138,152,255,0.20) inset;
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 25%;
+    height: 50%;
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #8a98ff, #4d52f5);
+    box-shadow: 0 0 12px rgba(77,82,245,0.6);
+  }
+
+  /* Section heading on dark surface */
+  .section-title {
+    @apply text-lg font-semibold text-ink-100 tracking-tight;
+  }
+  .muted {
+    @apply text-ink-400;
+  }
+}
+
+/* Recharts overrides for dark theme */
+.recharts-cartesian-grid line { stroke: rgba(255,255,255,0.05) !important; }
+.recharts-cartesian-axis-line { stroke: rgba(255,255,255,0.10) !important; }
+.recharts-cartesian-axis-tick text { fill: #5b6691 !important; }
+.recharts-default-tooltip {
+  background: rgba(15,21,48,0.95) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 16px 32px -8px rgba(0,0,0,0.6) !important;
+  backdrop-filter: blur(12px);
+}
+.recharts-tooltip-label { color: #dde1ee !important; font-weight: 600 !important; margin-bottom: 4px !important; }
+.recharts-tooltip-item { color: #b6bdd6 !important; }
+.recharts-legend-item-text { color: #b6bdd6 !important; }
