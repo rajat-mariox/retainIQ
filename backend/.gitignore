@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment files - keep example tracked
+.env
+.env.*
+!.env.example
+
+# Logs and runtime files
+logs/
+*.log
+*.pid
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Local data/dumps
+dump/
+tmp/
+temp/
+*.sqlite
+*.sqlite3
+*.db
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
