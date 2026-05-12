@@ -3,6 +3,7 @@ const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const Employee = require('../models/Employee');
+const { ORGANIZATION_APPROVAL_STATUS } = require('../config/constants');
 
 exports.listAll = asyncHandler(async (_req, res) => {
   const orgs = await Organization.find().sort({ createdAt: -1 });
@@ -24,6 +25,36 @@ exports.toggleActive = asyncHandler(async (req, res) => {
   if (!org) return res.status(404).json({ error: 'Not found' });
   org.isActive = !org.isActive;
   await org.save();
+  res.json(org);
+});
+
+exports.approve = asyncHandler(async (req, res) => {
+  const org = await Organization.findById(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Not found' });
+
+  org.approvalStatus = ORGANIZATION_APPROVAL_STATUS.APPROVED;
+  org.isActive = true;
+  org.approvedBy = req.user._id;
+  org.approvedAt = new Date();
+  org.rejectedBy = undefined;
+  org.rejectedAt = undefined;
+  org.rejectionReason = undefined;
+  await org.save();
+
+  res.json(org);
+});
+
+exports.reject = asyncHandler(async (req, res) => {
+  const org = await Organization.findById(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Not found' });
+
+  org.approvalStatus = ORGANIZATION_APPROVAL_STATUS.REJECTED;
+  org.isActive = false;
+  org.rejectedBy = req.user._id;
+  org.rejectedAt = new Date();
+  org.rejectionReason = req.body?.reason;
+  await org.save();
+
   res.json(org);
 });
 

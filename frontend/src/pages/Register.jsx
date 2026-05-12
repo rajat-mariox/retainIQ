@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { authService } from '../services';
-import { useAuthStore } from '../store/authStore';
 
 export default function Register() {
   const navigate = useNavigate();
-  const setSession = useAuthStore((s) => s.setSession);
   const [form, setForm] = useState({
     organizationName: '', industry: '', size: '50-200',
     adminName: '', adminEmail: '', password: '',
@@ -17,10 +15,9 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      const data = await authService.registerOrg(form);
-      setSession(data);
-      toast.success('Organization created');
-      navigate('/dashboard');
+      await authService.registerOrg(form);
+      toast.success('Registration submitted for super admin approval');
+      navigate('/login');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Registration failed');
     } finally { setLoading(false); }
@@ -29,7 +26,7 @@ export default function Register() {
   return (
     <div>
       <h2 className="text-2xl font-semibold text-ink-100 mb-1.5 tracking-tight">Create your organization</h2>
-      <p className="text-sm text-ink-400 mb-6">Start a 14-day trial. No credit card required.</p>
+      <p className="text-sm text-ink-400 mb-6">Submit your organization for super admin approval.</p>
       <form onSubmit={submit} className="space-y-3">
         <div>
           <label className="label">Organization name</label>
@@ -68,7 +65,7 @@ export default function Register() {
           <p className="text-xs text-ink-400 mt-1.5">Minimum 8 characters.</p>
         </div>
         <button className="btn-primary w-full mt-2" disabled={loading}>
-          {loading ? 'Creating…' : 'Create organization'}
+          {loading ? 'Submitting...' : 'Submit for approval'}
         </button>
       </form>
       <p className="text-sm text-ink-300 mt-6 text-center">

@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { HttpError } = require('./errorHandler');
 const User = require('../models/User');
-const { ROLES } = require('../config/constants');
+const Organization = require('../models/Organization');
+const { ORGANIZATION_APPROVAL_STATUS, ROLES } = require('../config/constants');
 
 /**
  * authenticate — verifies JWT, loads user, attaches req.user and req.organizationId
@@ -14,6 +15,19 @@ async function authenticate(req, _res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(payload.sub);
     if (!user || !user.isActive) throw new HttpError(401, 'Invalid session');
+    if (user.role !== ROLES.SUPER_ADMIN) {
+      const organization = user.organizationId ? await Organization.findById(user.organizationId) : null;
+      if (!organization) throw new HttpError(403, 'Organization not found');
+      if (organization.approvalStatus === ORGANIZATION_APPROVAL_STATUS.PENDING) {
+        throw new HttpError(403, 'Organization approval is pending. Please wait for super admin approval.');
+      }
+      if (organization.approvalStatus === ORGANIZATION_APPROVAL_STATUS.REJECTED) {
+        throw new HttpError(403, 'Organization registration was rejected by the super admin.');
+      }
+      if (!organization.isActive) {
+        throw new HttpError(403, 'Organization is inactive. Please contact the super admin.');
+      }
+    }
     req.user = user;
     req.organizationId = user.organizationId ? String(user.organizationId) : null;
     next();

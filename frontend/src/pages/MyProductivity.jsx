@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts';
-import { ShieldCheck, Eye, EyeOff, Activity, Brain, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Eye, EyeOff, Heart, Brain, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { productivityService, employeeService } from '../services';
 import { LoadingSpinner } from '../components/UIStates';
@@ -55,7 +55,7 @@ export default function MyProductivity() {
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, #6470ff 0%, #4d52f5 100%)', boxShadow: '0 1px 0 rgba(255,255,255,0.20) inset' }}>
-              <Activity size={18} className="text-white" />
+              <Heart size={18} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink-100 tracking-tight">Your productivity</h1>
           </div>
@@ -114,6 +114,7 @@ export default function MyProductivity() {
               </ul>
             </div>
           )}
+
         </>
       ) : (
         <div className="glass p-5 flex items-start gap-3">

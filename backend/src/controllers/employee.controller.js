@@ -4,6 +4,7 @@ const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
 const Employee = require('../models/Employee');
 const Department = require('../models/Department');
+const User = require('../models/User');
 const { ROLES, EMPLOYMENT_STATUS } = require('../config/constants');
 
 const createSchema = z.object({
@@ -22,6 +23,7 @@ const createSchema = z.object({
   monthlyCost: z.number().min(0).optional(),
   roleValuePerHour: z.number().min(0).optional(),
   currency: z.string().optional(),
+  password: z.string().min(8).optional(),
 });
 
 /**
@@ -76,22 +78,54 @@ exports.get = asyncHandler(async (req, res) => {
 
 exports.create = asyncHandler(async (req, res) => {
   const data = createSchema.parse(req.body);
-  const exists = await Employee.findOne({ organizationId: req.organizationId, email: data.email.toLowerCase() });
+  const { password, ...employeeData } = data;
+  const email = data.email.toLowerCase();
+  const exists = await Employee.findOne({ organizationId: req.organizationId, email });
   if (exists) throw new HttpError(409, 'Employee email already exists');
+  if (!password) throw new HttpError(400, 'Employee login password is required');
+  if (!employeeData.reportingManagerId) throw new HttpError(400, 'Reporting manager is required');
+
+  const userExists = await User.findOne({ email });
+  if (userExists) throw new HttpError(409, 'User email already exists');
+
+  const manager = await User.findOne({
+    organizationId: req.organizationId,
+    role: ROLES.MANAGER,
+    employeeId: employeeData.reportingManagerId,
+    isActive: true,
+  });
+  if (!manager) throw new HttpError(400, 'Reporting manager must be an active manager in this organization');
+
   const emp = await Employee.create({
-    ...data,
-    email: data.email.toLowerCase(),
+    ...employeeData,
+    email,
     organizationId: req.organizationId,
     createdBy: req.user._id,
   });
-  res.status(201).json(emp);
+
+  try {
+    const user = await User.create({
+      organizationId: req.organizationId,
+      employeeId: emp._id,
+      name: emp.name,
+      email: emp.email,
+      passwordHash: await User.hashPassword(password),
+      role: ROLES.EMPLOYEE,
+    });
+
+    res.status(201).json({ employee: emp, user: user.toSafeJSON() });
+  } catch (err) {
+    await Employee.deleteOne({ _id: emp._id, organizationId: req.organizationId });
+    throw err;
+  }
 });
 
 exports.update = asyncHandler(async (req, res) => {
   const data = createSchema.partial().parse(req.body);
+  const { password, ...employeeData } = data;
   const emp = await Employee.findOneAndUpdate(
     { _id: req.params.id, organizationId: req.organizationId },
-    data,
+    employeeData,
     { new: true }
   );
   if (!emp) throw new HttpError(404, 'Employee not found');
@@ -110,12 +144,15 @@ exports.remove = asyncHandler(async (req, res) => {
 
 exports.bulkImport = asyncHandler(async (req, res) => {
   const items = z.array(createSchema).parse(req.body.items || []);
-  const docs = items.map((d) => ({
-    ...d,
-    email: d.email.toLowerCase(),
-    organizationId: req.organizationId,
-    createdBy: req.user._id,
-  }));
+  const docs = items.map((d) => {
+    const { password, ...employeeData } = d;
+    return {
+      ...employeeData,
+      email: d.email.toLowerCase(),
+      organizationId: req.organizationId,
+      createdBy: req.user._id,
+    };
+  });
   const result = await Employee.insertMany(docs, { ordered: false });
   res.status(201).json({ inserted: result.length });
 });

@@ -2,7 +2,7 @@ const { z } = require('zod');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../utils/tokens');
-const { ROLES } = require('../config/constants');
+const { ORGANIZATION_APPROVAL_STATUS, ROLES } = require('../config/constants');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
@@ -34,6 +34,8 @@ exports.registerOrg = asyncHandler(async (req, res) => {
     industry: data.industry,
     size: data.size,
     plan: 'trial',
+    isActive: false,
+    approvalStatus: ORGANIZATION_APPROVAL_STATUS.PENDING,
   });
 
   await Plan.create({
@@ -52,16 +54,26 @@ exports.registerOrg = asyncHandler(async (req, res) => {
     role: ROLES.ORG_ADMIN,
   });
 
-  const accessToken = signAccessToken(admin);
-  const refreshToken = signRefreshToken(admin);
-
   res.status(201).json({
     organization: org,
     user: admin.toSafeJSON(),
-    accessToken,
-    refreshToken,
+    message: 'Organization registration submitted. A super admin must approve it before login.',
   });
 });
+
+function assertOrganizationCanLogin(user, organization) {
+  if (user.role === ROLES.SUPER_ADMIN) return;
+  if (!organization) throw new HttpError(403, 'Organization not found');
+  if (organization.approvalStatus === ORGANIZATION_APPROVAL_STATUS.PENDING) {
+    throw new HttpError(403, 'Organization approval is pending. Please wait for super admin approval.');
+  }
+  if (organization.approvalStatus === ORGANIZATION_APPROVAL_STATUS.REJECTED) {
+    throw new HttpError(403, 'Organization registration was rejected by the super admin.');
+  }
+  if (!organization.isActive) {
+    throw new HttpError(403, 'Organization is inactive. Please contact the super admin.');
+  }
+}
 
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
@@ -70,14 +82,15 @@ exports.login = asyncHandler(async (req, res) => {
   const ok = await user.comparePassword(password);
   if (!ok) throw new HttpError(401, 'Invalid credentials');
 
+  let organization = null;
+  if (user.organizationId) organization = await Organization.findById(user.organizationId);
+  assertOrganizationCanLogin(user, organization);
+
   user.lastLoginAt = new Date();
   await user.save();
 
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user);
-
-  let organization = null;
-  if (user.organizationId) organization = await Organization.findById(user.organizationId);
 
   res.json({ user: user.toSafeJSON(), organization, accessToken, refreshToken });
 });
@@ -90,6 +103,9 @@ exports.refresh = asyncHandler(async (req, res) => {
   catch { throw new HttpError(401, 'Invalid refresh token'); }
   const user = await User.findById(payload.sub);
   if (!user || !user.isActive) throw new HttpError(401, 'Invalid session');
+  let organization = null;
+  if (user.organizationId) organization = await Organization.findById(user.organizationId);
+  assertOrganizationCanLogin(user, organization);
   res.json({ accessToken: signAccessToken(user) });
 });
 

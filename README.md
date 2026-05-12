@@ -4,7 +4,7 @@
 
 **🎨 Design language:** Dark, glossy, glassmorphic UI. Deep navy-to-black gradient base, frosted translucent surfaces with subtle inset highlights, soft pastel "diamond" stat tiles for headline metrics, electric iris-blue as the primary action color, gold/amber for warnings. Inter typeface throughout. All charts (Recharts) themed for the dark surface.
 
-**⚠️ Important:** RetainIQ is a decision-support tool. Its outputs — risk scores, productivity scores, burnout signals, and ROI estimates — are probabilistic indicators based on signals the organization already owns through its HR, project-management, and calendar systems. They must **never** be the sole basis for any employment decision (termination, compensation, promotion). The platform deliberately does **not** capture keystrokes, screen content, browsing URLs, or private messages.
+**⚠️ Important:** RetainIQ is a decision-support tool. Its outputs — risk scores, productivity scores, burnout signals, and ROI estimates — are probabilistic indicators. They must **never** be the sole basis for any employment decision (termination, compensation, promotion). The optional desktop agent stores aggregate input counts, app usage, idle/active time, and periodic screenshots when enabled; it does **not** store actual typed text, passwords, private chat content, webcam, or microphone data.
 
 ---
 
@@ -214,8 +214,8 @@ All routes are prefixed with `/api`. All non-auth routes require `Authorization:
 ### Auth
 | Method | Path | Body / Notes |
 |---|---|---|
-| POST | `/auth/register-org` | `{ organizationName, adminName, adminEmail, password }` |
-| POST | `/auth/login` | `{ email, password }` |
+| POST | `/auth/register-org` | `{ organizationName, adminName, adminEmail, password }`; creates a pending organization and returns no tokens until super-admin approval |
+| POST | `/auth/login` | `{ email, password }`; organization users can log in only after approval and while active |
 | POST | `/auth/refresh` | `{ refreshToken }` |
 | POST | `/auth/logout` | (clears client-side state) |
 | GET | `/auth/me` | Returns current user + organization |
@@ -224,11 +224,11 @@ All routes are prefixed with `/api`. All non-auth routes require `Authorization:
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/employees` | `?search=&riskCategory=&departmentId=&status=&page=&limit=` |
-| POST | `/employees` | ORG_ADMIN/HR_ADMIN only |
+| POST | `/employees` | HR_ADMIN only; creates employee login account with `{ password, reportingManagerId }` |
 | GET | `/employees/:id` | |
-| PUT | `/employees/:id` | ORG_ADMIN/HR_ADMIN only |
+| PUT | `/employees/:id` | HR_ADMIN only |
 | DELETE | `/employees/:id` | Soft delete (sets status `inactive`) |
-| POST | `/employees/bulk-import` | `{ items: [...] }` |
+| POST | `/employees/bulk-import` | HR_ADMIN only; `{ items: [...] }` |
 
 ### Signals
 | Method | Path | Notes |
@@ -277,9 +277,23 @@ All routes are prefixed with `/api`. All non-auth routes require `Authorization:
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/organizations` | SUPER_ADMIN only |
+| PUT | `/organizations/:id/approve` | SUPER_ADMIN only; approves pending orgs and activates login |
+| PUT | `/organizations/:id/reject` | SUPER_ADMIN only; rejects pending orgs and blocks login |
 | PUT | `/organizations/:id/toggle-active` | SUPER_ADMIN only |
 | GET | `/organizations/departments/list` | |
-| POST | `/organizations/departments` | |
+| POST | `/organizations/departments` | ORG_ADMIN only |
+
+### Users
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/users` | ORG_ADMIN only; lists HR admins, managers, and employees |
+| POST | `/users` | ORG_ADMIN only; creates HR_ADMIN or MANAGER accounts |
+| GET | `/users/managers` | ORG_ADMIN/HR_ADMIN only; returns active managers for employee allocation |
+
+### Productivity
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/productivity/calculate/:employeeId` | Computes daily score using activity aggregates |
 
 ---
 
@@ -530,3 +544,68 @@ Before going live with real customer data:
 ## License
 
 Proprietary — internal MVP starter. Adapt for your organization.
+## Activity Monitoring MVP
+
+RetainIQ now includes optional employee activity monitoring APIs and a separate Electron desktop agent.
+
+### Backend
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+Screenshots are stored locally in `backend/uploads/screenshots` and are exposed from `/uploads/screenshots/...`. The backend records organization-scoped sessions, aggregate keyboard/mouse activity, idle/active minutes, app usage, screenshot metadata, and productivity scores.
+
+New API groups:
+
+- `POST /api/activity/session/start`
+- `POST /api/activity/session/break`
+- `POST /api/activity/session/resume`
+- `POST /api/activity/session/end`
+- `POST /api/activity/event`
+- `POST /api/activity/event/bulk`
+- `POST /api/activity/screenshot`
+- `POST /api/activity/app-usage`
+- `POST /api/activity/app-usage/bulk`
+- `GET /api/activity/:employeeId`
+- `GET /api/activity/:employeeId/screenshots`
+- `GET /api/activity/:employeeId/apps`
+- `POST /api/productivity/calculate/:employeeId`
+- `GET /api/productivity/:employeeId/scores`
+- `GET /api/productivity/dashboard`
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Routes added or extended:
+
+- `/productivity` for HR/admin productivity monitoring and manager team productivity.
+- `/portal/activity` for employees to review their own work history, activity split, app usage, screenshots, and transparency panel.
+
+### Desktop Agent
+
+```bash
+cd activity-agent
+npm install
+npm run dev
+```
+
+Optional configuration:
+
+```bash
+$env:API_BASE_URL="http://localhost:5000/api"
+$env:SCREENSHOT_INTERVAL_MINUTES="10"
+$env:IDLE_THRESHOLD_MINUTES="5"
+$env:EVENT_SYNC_INTERVAL_MINUTES="5"
+$env:APP_TRACKING_INTERVAL_SECONDS="30"
+npm run dev
+```
+
+The agent is for `EMPLOYEE` logins only. It stores the JWT locally in Electron user data, starts and ends activity sessions through the backend, sends aggregate input counts every five minutes, detects idle state after five inactive minutes, tracks active app/window usage every 30 seconds, and uploads screenshots every 10 minutes by default.

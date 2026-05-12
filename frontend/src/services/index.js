@@ -54,23 +54,39 @@ export const settingsService = {
 export const orgService = {
   listAll: () => api.get('/organizations').then((r) => r.data),
   toggleActive: (id) => api.put(`/organizations/${id}/toggle-active`).then((r) => r.data),
+  approve: (id) => api.put(`/organizations/${id}/approve`).then((r) => r.data),
+  reject: (id, payload = {}) => api.put(`/organizations/${id}/reject`, payload).then((r) => r.data),
   departments: () => api.get('/organizations/departments/list').then((r) => r.data),
   createDepartment: (payload) => api.post('/organizations/departments', payload).then((r) => r.data),
+};
+
+export const userService = {
+  list: () => api.get('/users').then((r) => r.data),
+  create: (payload) => api.post('/users', payload).then((r) => r.data),
+  managers: () => api.get('/users/managers').then((r) => r.data),
 };
 
 export const activityService = {
   upsert: (payload) => api.post('/activity', payload).then((r) => r.data),
   bulk: (items) => api.post('/activity/bulk', { items }).then((r) => r.data),
-  forEmployee: (employeeId, days = 30) => api.get(`/activity/${employeeId}`, { params: { days } }).then((r) => r.data),
+  sync: (payload) => api.post('/activity/sync', payload).then((r) => r.data),
+  endDay: (payload) => api.post('/activity/end-day', payload).then((r) => r.data),
+  forEmployee: (employeeId, daysOrParams = 30) => {
+    const params = typeof daysOrParams === 'number' ? { days: daysOrParams } : (daysOrParams || {});
+    return api.get(`/activity/${employeeId}`, { params }).then((r) => r.data);
+  },
+  forEmployeeOnDate: (employeeId, date) => api.get(`/activity/${employeeId}`, { params: { date } }).then((r) => r.data),
+  screenshots: (employeeId, params = {}) => api.get(`/activity/${employeeId}/screenshots`, { params }).then((r) => r.data),
+  apps: (employeeId, params = {}) => api.get(`/activity/${employeeId}/apps`, { params }).then((r) => r.data),
 };
 
 export const productivityService = {
-  dashboard: () => api.get('/productivity/dashboard').then((r) => r.data),
+  dashboard: (params = {}) => api.get('/productivity/dashboard', { params }).then((r) => r.data),
   leaderboard: (params) => api.get('/productivity/leaderboard', { params }).then((r) => r.data),
   scoresFor: (employeeId, days = 30) => api.get(`/productivity/${employeeId}/scores`, { params: { days } }).then((r) => r.data),
   workPattern: (employeeId) => api.get(`/productivity/${employeeId}/work-pattern`).then((r) => r.data),
   burnoutCheck: (employeeId) => api.get(`/productivity/${employeeId}/burnout-check`).then((r) => r.data),
-  calculate: (employeeId) => api.post(`/productivity/calculate/${employeeId}`).then((r) => r.data),
+  calculate: (employeeId, date) => api.post(`/productivity/calculate/${employeeId}`, null, { params: date ? { date } : {} }).then((r) => r.data),
   calculateAll: () => api.post('/productivity/calculate-all').then((r) => r.data),
 };
 

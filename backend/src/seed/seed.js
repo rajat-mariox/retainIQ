@@ -20,7 +20,7 @@ const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
 const ProductivityScore = require('../models/ProductivityScore');
 const Alert = require('../models/Alert');
-const { ROLES } = require('../config/constants');
+const { ORGANIZATION_APPROVAL_STATUS, ROLES } = require('../config/constants');
 const { calculateRisk } = require('../services/riskScoringService');
 const { calculateProductivity } = require('../services/productivityScoringService');
 
@@ -64,6 +64,8 @@ async function run() {
     industry: 'Software',
     size: '50-200',
     plan: 'growth',
+    isActive: true,
+    approvalStatus: ORGANIZATION_APPROVAL_STATUS.APPROVED,
     settings: { productivity: { roiEnabled: true } },
   });
   await Plan.create({ organizationId: org._id, plan: 'growth', seats: 100 });

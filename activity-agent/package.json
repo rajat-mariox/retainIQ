@@ -1,0 +1,23 @@
+{
+  "name": "retainiq-activity-agent",
+  "version": "1.0.0",
+  "description": "RetainIQ desktop activity tracker",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "active-win": "^9.0.0",
+    "axios": "^1.16.0",
+    "electron": "^30.5.1",
+    "node-cron": "^3.0.3",
+    "screenshot-desktop": "^1.15.4",
+    "uiohook-napi": "^1.5.5"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

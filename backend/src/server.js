@@ -5,12 +5,14 @@
  * This system provides decision-support insights about employee retention risk.
  * It MUST NOT be used as the sole basis for any employment decision (termination,
  * compensation, promotion). Output is a probabilistic indicator derived from
- * HR-domain signals the organization already owns. No keystroke logging, screen
- * recording, or private message reading is performed by this platform.
+ * HR-domain signals the organization owns. The optional desktop tracker stores
+ * aggregate input counts and periodic screenshots only when enabled; it never
+ * stores typed text, passwords, private message content, webcam, or microphone.
  * ----------------------------------------------------------------------------
  */
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -28,6 +30,7 @@ const pulseRoutes = require('./routes/pulse.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const orgRoutes = require('./routes/organization.routes');
+const userRoutes = require('./routes/user.routes');
 
 // Workforce Intelligence & Productivity Engine
 const activityRoutes = require('./routes/activity.routes');
@@ -38,10 +41,13 @@ const alertsRoutes = require('./routes/alerts.routes');
 
 const app = express();
 
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '15mb' }));
 app.use(morgan('dev'));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
+  setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+}));
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200 });
 app.use('/api/', apiLimiter);
@@ -57,6 +63,7 @@ app.use('/api/pulse', pulseRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/organizations', orgRoutes);
+app.use('/api/users', userRoutes);
 
 // Workforce Intelligence & Productivity Engine
 app.use('/api/activity', activityRoutes);
