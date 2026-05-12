@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ORGANIZATION_APPROVAL_STATUS } = require('../config/constants');
 
 const settingsSchema = new mongoose.Schema(
   {
@@ -41,6 +42,12 @@ const settingsSchema = new mongoose.Schema(
       // Employee transparency: what's shown in the "what we track" panel
       transparencyEnabled: { type: Boolean, default: true },
     },
+
+    // Desktop activity-agent timing config (read by the agent on login)
+    agent: {
+      screenshotIntervalMinutes: { type: Number, default: 10, min: 1, max: 240 },
+      screenshotsEnabled: { type: Boolean, default: true },
+    },
   },
   { _id: false }
 );
@@ -52,7 +59,18 @@ const organizationSchema = new mongoose.Schema(
     industry: { type: String },
     size: { type: String },
     plan: { type: String, enum: ['trial', 'starter', 'growth', 'enterprise'], default: 'trial' },
-    isActive: { type: Boolean, default: true },
+    isActive: { type: Boolean, default: false },
+    approvalStatus: {
+      type: String,
+      enum: Object.values(ORGANIZATION_APPROVAL_STATUS),
+      default: ORGANIZATION_APPROVAL_STATUS.PENDING,
+      index: true,
+    },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedAt: { type: Date },
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    rejectedAt: { type: Date },
+    rejectionReason: { type: String, trim: true },
     settings: { type: settingsSchema, default: () => ({}) },
   },
   { timestamps: true }

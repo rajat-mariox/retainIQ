@@ -6,6 +6,12 @@ const ROLES = Object.freeze({
   EMPLOYEE: 'EMPLOYEE',
 });
 
+const ORGANIZATION_APPROVAL_STATUS = Object.freeze({
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+});
+
 const RISK_CATEGORIES = Object.freeze({
   LOW: 'Low',
   MEDIUM: 'Medium',
@@ -40,6 +46,7 @@ const INTERVENTION_STATUSES = ['planned', 'in_progress', 'completed', 'ineffecti
 
 module.exports = {
   ROLES,
+  ORGANIZATION_APPROVAL_STATUS,
   RISK_CATEGORIES,
   TRENDS,
   EMPLOYMENT_STATUS,

@@ -2,19 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, Users, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { employeeService, orgService } from '../services';
+import { employeeService, orgService, userService } from '../services';
 import RiskBadge from '../components/RiskBadge';
 import { LoadingSpinner, EmptyState } from '../components/UIStates';
 import Modal from '../components/Modal';
 import { formatDate } from '../utils/format';
 import { useAuthStore } from '../store/authStore';
 
-const CAN_EDIT = ['ORG_ADMIN', 'HR_ADMIN'];
+const CAN_EDIT = ['HR_ADMIN'];
 
 export default function EmployeeList() {
   const role = useAuthStore((s) => s.user?.role);
   const [items, setItems] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [managers, setManagers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState({ riskCategory: '', departmentId: '' });
@@ -23,12 +24,14 @@ export default function EmployeeList() {
   const load = async () => {
     setLoading(true);
     try {
-      const [data, dpts] = await Promise.all([
+      const [data, dpts, mgrs] = await Promise.all([
         employeeService.list({ search, ...filter, limit: 100 }),
         orgService.departments().catch(() => ({ items: [] })),
+        userService.managers().catch(() => ({ items: [] })),
       ]);
       setItems(data.items);
       setDepartments(dpts.items || []);
+      setManagers(mgrs.items || []);
     } catch { toast.error('Failed to load employees'); }
     finally { setLoading(false); }
   };
@@ -131,15 +134,17 @@ export default function EmployeeList() {
         )
       }
 
-      <AddEmployeeModal open={showAdd} onClose={() => setShowAdd(false)} departments={departments} onCreated={load} />
+      <AddEmployeeModal open={showAdd} onClose={() => setShowAdd(false)} departments={departments} managers={managers} onCreated={load} />
     </div>
   );
 }
 
-function AddEmployeeModal({ open, onClose, departments, onCreated }) {
+function AddEmployeeModal({ open, onClose, departments, managers, onCreated }) {
   const [form, setForm] = useState({
     name: '', email: '', designation: '', departmentId: '',
+    reportingManagerId: '', password: '',
     employmentType: 'full_time', workMode: 'office', joiningDate: '',
+    monthlyCost: '', roleValuePerHour: '', currency: 'INR',
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -147,10 +152,22 @@ function AddEmployeeModal({ open, onClose, departments, onCreated }) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await employeeService.create({ ...form, departmentId: form.departmentId || undefined });
+      await employeeService.create({
+        ...form,
+        departmentId: form.departmentId || undefined,
+        reportingManagerId: form.reportingManagerId || undefined,
+        password: form.password || undefined,
+        monthlyCost: form.monthlyCost === '' ? undefined : Number(form.monthlyCost),
+        roleValuePerHour: form.roleValuePerHour === '' ? undefined : Number(form.roleValuePerHour),
+      });
       toast.success('Employee added');
       onClose(); onCreated();
-      setForm({ name: '', email: '', designation: '', departmentId: '', employmentType: 'full_time', workMode: 'office', joiningDate: '' });
+      setForm({
+        name: '', email: '', designation: '', departmentId: '',
+        reportingManagerId: '', password: '',
+        employmentType: 'full_time', workMode: 'office', joiningDate: '',
+        monthlyCost: '', roleValuePerHour: '', currency: 'INR',
+      });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to add employee');
     } finally { setSubmitting(false); }
@@ -170,6 +187,13 @@ function AddEmployeeModal({ open, onClose, departments, onCreated }) {
             <option value="">— Select —</option>
             {departments.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
           </select></div>
+        <div><label className="label">Manager</label>
+          <select className="input" required value={form.reportingManagerId} onChange={(e) => setForm({ ...form, reportingManagerId: e.target.value })}>
+            <option value="">Select manager</option>
+            {managers.map((m) => <option key={m.employee._id} value={m.employee._id}>{m.employee.name}</option>)}
+          </select></div>
+        <div><label className="label">Login password</label>
+          <input className="input" type="password" required minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
         <div><label className="label">Employment type</label>
           <select className="input" value={form.employmentType} onChange={(e) => setForm({ ...form, employmentType: e.target.value })}>
             <option value="full_time">Full-time</option><option value="part_time">Part-time</option>
@@ -181,6 +205,10 @@ function AddEmployeeModal({ open, onClose, departments, onCreated }) {
           </select></div>
         <div className="col-span-2"><label className="label">Joining date</label>
           <input className="input" type="date" value={form.joiningDate} onChange={(e) => setForm({ ...form, joiningDate: e.target.value })} /></div>
+        <div><label className="label">Monthly cost</label>
+          <input className="input" type="number" min="0" value={form.monthlyCost} onChange={(e) => setForm({ ...form, monthlyCost: e.target.value })} /></div>
+        <div><label className="label">Role value/hour</label>
+          <input className="input" type="number" min="0" value={form.roleValuePerHour} onChange={(e) => setForm({ ...form, roleValuePerHour: e.target.value })} /></div>
         <div className="col-span-2 flex justify-end gap-2 mt-3 pt-3 border-t border-white/[0.06]">
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Adding…' : 'Add employee'}</button>

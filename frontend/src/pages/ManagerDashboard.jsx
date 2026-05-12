@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, AlertTriangle, ClipboardList, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { riskService, employeeService } from '../services';
+import { employeeService } from '../services';
 import { LoadingSpinner } from '../components/UIStates';
 import StatCard from '../components/StatCard';
 import RiskBadge from '../components/RiskBadge';
@@ -42,10 +42,10 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard tone="iris"  label="Team size"     value={team.length}            sub="Direct reports"      icon={Users} />
-        <StatCard tone="cream" label="High risk"     value={counts.High || 0}        sub="Watch closely"        icon={AlertTriangle} />
-        <StatCard tone="rose"  label="Critical risk" value={counts.Critical || 0}    sub="Act this week"        icon={AlertTriangle} />
-        <StatCard tone="mint"  label="Avg. risk"     value={avg}                     sub="0–100 scale"          icon={ClipboardList} />
+        <StatCard tone="iris" label="Team size" value={team.length} sub="Direct reports" icon={Users} />
+        <StatCard tone="cream" label="High risk" value={counts.High || 0} sub="Watch closely" icon={AlertTriangle} />
+        <StatCard tone="rose" label="Critical risk" value={counts.Critical || 0} sub="Act this week" icon={AlertTriangle} />
+        <StatCard tone="mint" label="Avg. risk" value={avg} sub="0-100 scale" icon={ClipboardList} />
       </div>
 
       <div className="glass overflow-hidden">
@@ -75,7 +75,7 @@ export default function ManagerDashboard() {
                       <span className="font-medium text-ink-100">{e.name}</span>
                     </div>
                   </td>
-                  <td className="table-td">{e.designation || '—'}</td>
+                  <td className="table-td">{e.designation || '-'}</td>
                   <td className="table-td"><RiskBadge category={e.currentRiskCategory} score={e.currentRiskScore} /></td>
                   <td className="table-td">{e.currentRiskTrend || 'Stable'}</td>
                   <td className="table-td text-right">

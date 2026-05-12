@@ -1,8 +1,17 @@
 const { z } = require('zod');
+const fs = require('fs');
+const path = require('path');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
 const ActivityLog = require('../models/ActivityLog');
+const ActivitySession = require('../models/ActivitySession');
+const ActivityEvent = require('../models/ActivityEvent');
+const ScreenshotLog = require('../models/ScreenshotLog');
+const AppUsageLog = require('../models/AppUsageLog');
 const Employee = require('../models/Employee');
+const { ROLES } = require('../config/constants');
+const { assertEmployeeAccess, resolveSubmittingEmployee } = require('../services/activityAccessService');
+const { calculateAndPersistActivityScore } = require('../services/activityProductivityService');
 
 const activitySchema = z.object({
   employeeId: z.string(),
@@ -41,8 +50,8 @@ function dayKey(d) {
 
 exports.upsert = asyncHandler(async (req, res) => {
   const data = activitySchema.parse(req.body);
-  const emp = await Employee.findOne({ _id: data.employeeId, organizationId: req.organizationId });
-  if (!emp) throw new HttpError(404, 'Employee not found');
+  if (req.user.role === ROLES.EMPLOYEE) await resolveSubmittingEmployee(req, data.employeeId);
+  else await assertEmployeeAccess(req, data.employeeId, { write: false });
 
   const date = dayKey(data.date);
   const doc = await ActivityLog.findOneAndUpdate(
@@ -74,12 +83,397 @@ exports.bulk = asyncHandler(async (req, res) => {
 });
 
 exports.forEmployee = asyncHandler(async (req, res) => {
+  await assertEmployeeAccess(req, req.params.employeeId);
   const days = Math.min(120, parseInt(req.query.days) || 30);
   const since = new Date(Date.now() - days * 24 * 3600 * 1000);
-  const items = await ActivityLog.find({
+  const [items, sessions] = await Promise.all([
+    ActivityLog.find({
+      organizationId: req.organizationId,
+      employeeId: req.params.employeeId,
+      date: { $gte: since },
+    }).sort({ date: 1 }),
+    ActivitySession.find({
+      organizationId: req.organizationId,
+      employeeId: req.params.employeeId,
+      date: { $gte: since },
+    }).sort({ startTime: -1 }),
+  ]);
+  const summary = sessions.reduce((acc, s) => {
+    acc.totalMinutes += s.totalMinutes || 0;
+    acc.activeMinutes += s.activeMinutes || 0;
+    acc.idleMinutes += s.idleMinutes || 0;
+    acc.breakMinutes += s.breakMinutes || 0;
+    return acc;
+  }, { totalMinutes: 0, activeMinutes: 0, idleMinutes: 0, breakMinutes: 0 });
+  res.json({ items, sessions, summary });
+});
+
+function activeSessionQuery(employeeId, orgId) {
+  return { organizationId: orgId, employeeId, status: { $in: ['working', 'break'] } };
+}
+
+async function getEmployeeSession(req, sessionId) {
+  const session = await ActivitySession.findOne({ _id: sessionId, organizationId: req.organizationId });
+  if (!session) throw new HttpError(404, 'Activity session not found');
+  await assertEmployeeAccess(req, session.employeeId, { write: req.user.role === ROLES.EMPLOYEE });
+  return session;
+}
+
+function minutesBetween(start, end) {
+  return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000));
+}
+
+exports.startSession = asyncHandler(async (req, res) => {
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const existing = await ActivitySession.findOne(activeSessionQuery(employee._id, req.organizationId)).sort({ startTime: -1 });
+  if (existing) return res.status(200).json(existing);
+
+  const now = req.body.startTime ? new Date(req.body.startTime) : new Date();
+  const session = await ActivitySession.create({
+    organizationId: req.organizationId,
+    employeeId: employee._id,
+    userId: req.user._id,
+    date: dayKey(now),
+    startTime: now,
+    status: 'working',
+  });
+  res.status(201).json(session);
+});
+
+exports.breakSession = asyncHandler(async (req, res) => {
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const session = await ActivitySession.findOne({ organizationId: req.organizationId, employeeId: employee._id, status: 'working' }).sort({ startTime: -1 });
+  if (!session) throw new HttpError(404, 'No working session found');
+  session.status = 'break';
+  session.breakStartedAt = new Date();
+  await session.save();
+  res.json(session);
+});
+
+exports.resumeSession = asyncHandler(async (req, res) => {
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const session = await ActivitySession.findOne({ organizationId: req.organizationId, employeeId: employee._id, status: 'break' }).sort({ startTime: -1 });
+  if (!session) throw new HttpError(404, 'No break session found');
+  if (session.breakStartedAt) session.breakMinutes += minutesBetween(session.breakStartedAt, new Date());
+  session.status = 'working';
+  session.breakStartedAt = undefined;
+  await session.save();
+  res.json(session);
+});
+
+exports.endSession = asyncHandler(async (req, res) => {
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const session = await ActivitySession.findOne(activeSessionQuery(employee._id, req.organizationId)).sort({ startTime: -1 });
+  if (!session) throw new HttpError(404, 'No active session found');
+  const now = req.body.endTime ? new Date(req.body.endTime) : new Date();
+  if (session.status === 'break' && session.breakStartedAt) {
+    session.breakMinutes += minutesBetween(session.breakStartedAt, now);
+  }
+  session.endTime = now;
+  session.status = 'ended';
+  session.breakStartedAt = undefined;
+  session.totalMinutes = minutesBetween(session.startTime, now);
+  await session.save();
+
+  await ActivityLog.findOneAndUpdate(
+    { organizationId: req.organizationId, employeeId: employee._id, date: session.date },
+    {
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      date: session.date,
+      loginTime: session.startTime,
+      logoutTime: now,
+      activeMinutes: session.activeMinutes,
+      idleMinutes: session.idleMinutes,
+      breakMinutes: session.breakMinutes,
+      totalLoggedMinutes: session.totalMinutes,
+      source: 'desktop_agent',
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  res.json(session);
+});
+
+const eventSchema = z.object({
+  employeeId: z.string().optional(),
+  sessionId: z.string(),
+  type: z.enum(['keyboard', 'mouse', 'idle', 'active']),
+  count: z.number().min(0).default(0),
+  capturedAt: z.string().optional(),
+});
+
+async function createEvent(req, input) {
+  const data = eventSchema.parse(input);
+  const session = await getEmployeeSession(req, data.sessionId);
+  const employee = await resolveSubmittingEmployee(req, data.employeeId || session.employeeId);
+  if (String(session.employeeId) !== String(employee._id)) throw new HttpError(403, 'Session does not belong to employee');
+
+  const doc = await ActivityEvent.create({
+    organizationId: req.organizationId,
+    employeeId: employee._id,
+    sessionId: session._id,
+    type: data.type,
+    count: data.count,
+    capturedAt: data.capturedAt ? new Date(data.capturedAt) : new Date(),
+  });
+  if (data.type === 'idle') session.idleMinutes += data.count || 1;
+  if (data.type === 'active') session.activeMinutes += data.count || 1;
+  await session.save();
+  return doc;
+}
+
+exports.createEvent = asyncHandler(async (req, res) => {
+  const doc = await createEvent(req, req.body);
+  res.status(201).json(doc);
+});
+
+exports.bulkEvents = asyncHandler(async (req, res) => {
+  const items = z.array(eventSchema).parse(req.body.items || []);
+  const docs = [];
+  for (const item of items) docs.push(await createEvent(req, item));
+  res.status(201).json({ written: docs.length });
+});
+
+function decodeScreenshot(body) {
+  const raw = body.imageBase64 || body.image || body.dataUrl;
+  if (!raw) throw new HttpError(400, 'imageBase64 or dataUrl is required');
+  const match = String(raw).match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/);
+  const ext = match ? (match[1] === 'jpeg' ? 'jpg' : match[1]) : (body.extension || 'png');
+  const base64 = match ? match[2] : raw;
+  return { buffer: Buffer.from(base64, 'base64'), ext };
+}
+
+exports.createScreenshot = asyncHandler(async (req, res) => {
+  const session = await getEmployeeSession(req, req.body.sessionId);
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId || session.employeeId);
+  if (String(session.employeeId) !== String(employee._id)) throw new HttpError(403, 'Session does not belong to employee');
+
+  const { buffer, ext } = decodeScreenshot(req.body);
+  const uploadRoot = path.join(__dirname, '..', '..', 'uploads', 'screenshots');
+  fs.mkdirSync(uploadRoot, { recursive: true });
+  const safeName = `${employee._id}-${Date.now()}.${ext}`;
+  const filePath = path.join(uploadRoot, safeName);
+  fs.writeFileSync(filePath, buffer);
+
+  const doc = await ScreenshotLog.create({
+    organizationId: req.organizationId,
+    employeeId: employee._id,
+    sessionId: session._id,
+    imageUrl: `/uploads/screenshots/${safeName}`,
+    activeApp: req.body.activeApp,
+    capturedAt: req.body.capturedAt ? new Date(req.body.capturedAt) : new Date(),
+  });
+  res.status(201).json(doc);
+});
+
+const appUsageSchema = z.object({
+  employeeId: z.string().optional(),
+  sessionId: z.string(),
+  appName: z.string().min(1),
+  windowTitle: z.string().optional().default(''),
+  category: z.enum(['productive', 'neutral', 'unproductive']).default('neutral'),
+  durationSeconds: z.number().min(0).default(0),
+  capturedAt: z.string().optional(),
+});
+
+async function createAppUsage(req, input) {
+  const data = appUsageSchema.parse(input);
+  const session = await getEmployeeSession(req, data.sessionId);
+  const employee = await resolveSubmittingEmployee(req, data.employeeId || session.employeeId);
+  if (String(session.employeeId) !== String(employee._id)) throw new HttpError(403, 'Session does not belong to employee');
+  return AppUsageLog.create({
+    organizationId: req.organizationId,
+    employeeId: employee._id,
+    sessionId: session._id,
+    appName: data.appName,
+    windowTitle: data.windowTitle,
+    category: data.category,
+    durationSeconds: data.durationSeconds,
+    capturedAt: data.capturedAt ? new Date(data.capturedAt) : new Date(),
+  });
+}
+
+exports.createAppUsage = asyncHandler(async (req, res) => {
+  const doc = await createAppUsage(req, req.body);
+  res.status(201).json(doc);
+});
+
+exports.bulkAppUsage = asyncHandler(async (req, res) => {
+  const items = z.array(appUsageSchema).parse(req.body.items || []);
+  const docs = [];
+  for (const item of items) docs.push(await createAppUsage(req, item));
+  res.status(201).json({ written: docs.length });
+});
+
+exports.screenshotsForEmployee = asyncHandler(async (req, res) => {
+  await assertEmployeeAccess(req, req.params.employeeId);
+  const days = Math.min(30, parseInt(req.query.days) || 7);
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+  const items = await ScreenshotLog.find({
     organizationId: req.organizationId,
     employeeId: req.params.employeeId,
-    date: { $gte: since },
-  }).sort({ date: 1 });
+    capturedAt: { $gte: since },
+  }).sort({ capturedAt: -1 }).limit(Math.min(100, parseInt(req.query.limit) || 30));
   res.json({ items });
+});
+
+// ---------------------------------------------------------------------------
+// /activity/sync — periodic delta push from the desktop agent.
+// Counters (active/idle/break minutes, keyboard/mouse, app-minute buckets) are
+// added on top of the day's row. appUsage entries are merged by (appName +
+// category); screenshots are appended.
+// ---------------------------------------------------------------------------
+const appUsageEntrySyncSchema = z.object({
+  appName: z.string().min(1),
+  windowTitle: z.string().optional().default(''),
+  category: z.enum(['productive', 'neutral', 'unproductive']).default('neutral'),
+  durationMinutes: z.number().min(0).default(0),
+});
+
+const screenshotEntrySyncSchema = z.object({
+  imageUrl: z.string().min(1),
+  activeApp: z.string().optional().default(''),
+  capturedAt: z.string().optional(),
+});
+
+const syncSchema = z.object({
+  date: z.string(),
+  totalWorkMinutes: z.number().min(0).default(0),
+  activeMinutes: z.number().min(0).default(0),
+  idleMinutes: z.number().min(0).default(0),
+  breakMinutes: z.number().min(0).default(0),
+  keyboardCount: z.number().min(0).default(0),
+  mouseCount: z.number().min(0).default(0),
+  productiveAppMinutes: z.number().min(0).default(0),
+  neutralAppMinutes: z.number().min(0).default(0),
+  unproductiveAppMinutes: z.number().min(0).default(0),
+  appUsage: z.array(appUsageEntrySyncSchema).optional().default([]),
+  screenshots: z.array(screenshotEntrySyncSchema).optional().default([]),
+});
+
+exports.sync = asyncHandler(async (req, res) => {
+  const data = syncSchema.parse(req.body);
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const date = dayKey(data.date);
+
+  let log = await ActivityLog.findOne({
+    organizationId: req.organizationId,
+    employeeId: employee._id,
+    date,
+  });
+
+  if (!log) {
+    log = new ActivityLog({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      userId: req.user._id,
+      date,
+      loginTime: new Date(),
+      source: 'desktop_agent',
+    });
+  }
+
+  log.totalWorkMinutes = (log.totalWorkMinutes || 0) + data.totalWorkMinutes;
+  log.activeMinutes = (log.activeMinutes || 0) + data.activeMinutes;
+  log.idleMinutes = (log.idleMinutes || 0) + data.idleMinutes;
+  log.breakMinutes = (log.breakMinutes || 0) + data.breakMinutes;
+  log.keyboardCount = (log.keyboardCount || 0) + data.keyboardCount;
+  log.mouseCount = (log.mouseCount || 0) + data.mouseCount;
+  log.productiveAppMinutes = (log.productiveAppMinutes || 0) + data.productiveAppMinutes;
+  log.neutralAppMinutes = (log.neutralAppMinutes || 0) + data.neutralAppMinutes;
+  log.unproductiveAppMinutes = (log.unproductiveAppMinutes || 0) + data.unproductiveAppMinutes;
+  log.totalLoggedMinutes = (log.activeMinutes || 0) + (log.idleMinutes || 0) + (log.breakMinutes || 0);
+  log.source = 'desktop_agent';
+
+  for (const entry of data.appUsage) {
+    const existing = (log.appUsage || []).find(
+      (a) => a.appName === entry.appName && a.category === entry.category
+    );
+    if (existing) {
+      existing.durationMinutes = (existing.durationMinutes || 0) + entry.durationMinutes;
+      if (entry.windowTitle) existing.windowTitle = entry.windowTitle;
+    } else {
+      log.appUsage.push(entry);
+    }
+  }
+
+  for (const shot of data.screenshots) {
+    log.screenshots.push({
+      imageUrl: shot.imageUrl,
+      activeApp: shot.activeApp || '',
+      capturedAt: shot.capturedAt ? new Date(shot.capturedAt) : new Date(),
+    });
+  }
+
+  await log.save();
+  res.status(200).json(log);
+});
+
+// ---------------------------------------------------------------------------
+// /activity/end-day — final totals for the day from the agent. These are
+// authoritative replacements (not increments) for the time buckets, and the
+// productivity score is recomputed immediately so the manager dashboard sees
+// the result without waiting for the nightly job.
+// ---------------------------------------------------------------------------
+const endDaySchema = z.object({
+  date: z.string(),
+  totalWorkMinutes: z.number().min(0).default(0),
+  activeMinutes: z.number().min(0).default(0),
+  idleMinutes: z.number().min(0).default(0),
+  breakMinutes: z.number().min(0).default(0),
+});
+
+exports.endDay = asyncHandler(async (req, res) => {
+  const data = endDaySchema.parse(req.body);
+  const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
+  const date = dayKey(data.date);
+
+  const log = await ActivityLog.findOneAndUpdate(
+    { organizationId: req.organizationId, employeeId: employee._id, date },
+    {
+      $set: {
+        organizationId: req.organizationId,
+        employeeId: employee._id,
+        userId: req.user._id,
+        date,
+        logoutTime: new Date(),
+        totalWorkMinutes: data.totalWorkMinutes,
+        activeMinutes: data.activeMinutes,
+        idleMinutes: data.idleMinutes,
+        breakMinutes: data.breakMinutes,
+        totalLoggedMinutes: data.activeMinutes + data.idleMinutes + data.breakMinutes,
+        source: 'desktop_agent',
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  let scoreResult = null;
+  try {
+    scoreResult = await calculateAndPersistActivityScore(req.organizationId, employee._id, date);
+  } catch (err) {
+    console.error('[activity] end-day score failed', err.message);
+  }
+
+  res.status(200).json({ log, score: scoreResult?.score || null });
+});
+
+exports.appsForEmployee = asyncHandler(async (req, res) => {
+  await assertEmployeeAccess(req, req.params.employeeId);
+  const days = Math.min(30, parseInt(req.query.days) || 7);
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+  const items = await AppUsageLog.find({
+    organizationId: req.organizationId,
+    employeeId: req.params.employeeId,
+    capturedAt: { $gte: since },
+  }).sort({ capturedAt: -1 }).limit(Math.min(250, parseInt(req.query.limit) || 100));
+
+  const summaryMap = {};
+  for (const item of items) {
+    const key = item.appName;
+    if (!summaryMap[key]) summaryMap[key] = { appName: key, category: item.category, durationSeconds: 0 };
+    summaryMap[key].durationSeconds += item.durationSeconds || 0;
+  }
+  res.json({ items, summary: Object.values(summaryMap).sort((a, b) => b.durationSeconds - a.durationSeconds) });
 });

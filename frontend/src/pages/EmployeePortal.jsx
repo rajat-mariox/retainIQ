@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, ShieldCheck, Eye, EyeOff, MessageSquare } from 'lucide-react';
+import { Heart, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
 import { pulseService } from '../services';
+import EmployeeTransparencyPanel from '../components/EmployeeTransparencyPanel';
 
 export function EmployeePortal() {
   const user = useAuthStore((s) => s.user);
@@ -47,35 +48,7 @@ export function EmployeePortal() {
         </a>
       </div>
 
-      <div className="glass p-5">
-        <h3 className="section-title mb-3 flex items-center gap-2">
-          <ShieldCheck size={18} className="text-mint-300" /> What we track and what we never collect
-        </h3>
-        <div className="grid md:grid-cols-2 gap-5 mt-3">
-          <div>
-            <p className="text-sm font-medium text-mint-300 flex items-center gap-1.5 mb-2"><Eye size={14} /> What we use</p>
-            <ul className="text-sm text-ink-300 space-y-1.5">
-              <li className="flex gap-2"><span className="text-mint-400">-</span> Login/logout times</li>
-              <li className="flex gap-2"><span className="text-mint-400">-</span> Aggregated active vs idle time</li>
-              <li className="flex gap-2"><span className="text-mint-400">-</span> App <em>category</em> usage (no app names)</li>
-              <li className="flex gap-2"><span className="text-mint-400">-</span> Tasks completed, commits, PRs</li>
-              <li className="flex gap-2"><span className="text-mint-400">-</span> Calendar meeting durations</li>
-              <li className="flex gap-2"><span className="text-mint-400">-</span> Optional self-reported pulses</li>
-            </ul>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-rose-300 flex items-center gap-1.5 mb-2"><EyeOff size={14} /> What we never collect</p>
-            <ul className="text-sm text-ink-300 space-y-1.5">
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Screen recordings or screenshots</li>
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Keystroke logs</li>
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Email or chat contents</li>
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Browsing URLs or window titles</li>
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Webcam or microphone</li>
-              <li className="flex gap-2"><span className="text-rose-400">x</span> Clipboard contents</li>
-            </ul>
-          </div>
-        </div>
-      </div>
+      <EmployeeTransparencyPanel />
     </div>
   );
 }

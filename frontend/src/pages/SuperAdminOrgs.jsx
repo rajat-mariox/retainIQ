@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, Power } from 'lucide-react';
+import { Building2, CheckCircle2, Power, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { orgService } from '../services';
 import { LoadingSpinner } from '../components/UIStates';
@@ -19,6 +19,7 @@ export default function SuperAdminOrgs() {
       users: item.users,
       employees: item.employees,
       isActive: organization.isActive !== false,
+      approvalStatus: organization.approvalStatus || 'approved',
     };
   });
 
@@ -43,6 +44,26 @@ export default function SuperAdminOrgs() {
       load();
     } catch {
       toast.error('Failed');
+    }
+  };
+
+  const approve = async (id) => {
+    try {
+      await orgService.approve(id);
+      toast.success('Organization approved');
+      load();
+    } catch {
+      toast.error('Approval failed');
+    }
+  };
+
+  const reject = async (id) => {
+    try {
+      await orgService.reject(id);
+      toast.success('Organization rejected');
+      load();
+    } catch {
+      toast.error('Rejection failed');
     }
   };
 
@@ -98,15 +119,33 @@ export default function SuperAdminOrgs() {
                   <td className="table-td">{o.users ?? '-'}</td>
                   <td className="table-td">{o.employees ?? '-'}</td>
                   <td className="table-td">
-                    {o.isActive
-                      ? <span className="badge bg-mint-400/15 text-mint-300 border-mint-400/30">Active</span>
-                      : <span className="badge bg-white/[0.05] text-ink-400 border-white/10">Suspended</span>}
+                    {o.approvalStatus === 'pending'
+                      ? <span className="badge bg-amber-400/15 text-amber-300 border-amber-400/30">Pending approval</span>
+                      : o.approvalStatus === 'rejected'
+                        ? <span className="badge bg-rose-400/15 text-rose-300 border-rose-400/30">Rejected</span>
+                        : o.isActive
+                          ? <span className="badge bg-mint-400/15 text-mint-300 border-mint-400/30">Active</span>
+                          : <span className="badge bg-white/[0.05] text-ink-400 border-white/10">Suspended</span>}
                   </td>
                   <td className="table-td muted">{formatDate(o.createdAt)}</td>
                   <td className="table-td text-right">
-                    <button onClick={() => toggle(o._id)} className="text-ink-300 text-sm font-medium hover:text-ink-100 inline-flex items-center gap-1 transition">
-                      <Power size={12} /> {o.isActive ? 'Suspend' : 'Reactivate'}
-                    </button>
+                    <div className="flex justify-end gap-3">
+                      {o.approvalStatus === 'pending' && (
+                        <>
+                          <button onClick={() => approve(o._id)} className="text-mint-300 text-sm font-medium hover:text-mint-200 inline-flex items-center gap-1 transition">
+                            <CheckCircle2 size={12} /> Approve
+                          </button>
+                          <button onClick={() => reject(o._id)} className="text-rose-300 text-sm font-medium hover:text-rose-200 inline-flex items-center gap-1 transition">
+                            <XCircle size={12} /> Reject
+                          </button>
+                        </>
+                      )}
+                      {o.approvalStatus === 'approved' && (
+                        <button onClick={() => toggle(o._id)} className="text-ink-300 text-sm font-medium hover:text-ink-100 inline-flex items-center gap-1 transition">
+                          <Power size={12} /> {o.isActive ? 'Suspend' : 'Reactivate'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -46,6 +46,7 @@ const itemsFor = (role) => {
     { to: '/pulse', label: 'Pulse Insights', icon: MessageSquare },
     { section: 'Workforce Intelligence' },
     { to: '/productivity', label: 'Productivity', icon: Activity },
+    { to: '/employee-activity', label: 'Employee Activity', icon: Activity },
     { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { to: '/alerts', label: 'Alerts', icon: AlertOctagon },
     { to: '/reports', label: 'Reports', icon: FileText },

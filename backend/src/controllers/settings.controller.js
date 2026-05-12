@@ -44,6 +44,10 @@ const settingsSchema = z.object({
     gamificationEnabled: z.boolean().optional(),
     transparencyEnabled: z.boolean().optional(),
   }).optional(),
+  agent: z.object({
+    screenshotIntervalMinutes: z.number().int().min(1).max(240).optional(),
+    screenshotsEnabled: z.boolean().optional(),
+  }).optional(),
 });
 
 exports.get = asyncHandler(async (req, res) => {
@@ -56,7 +60,26 @@ exports.update = asyncHandler(async (req, res) => {
   const data = settingsSchema.parse(req.body);
   const org = await Organization.findById(req.organizationId);
   if (!org) throw new HttpError(404, 'Organization not found');
-  org.settings = { ...org.settings.toObject?.() || org.settings, ...data };
-  await org.save();
-  res.json({ settings: org.settings });
+
+  // Use $set on dot paths so Mongoose tracks nested subdoc changes reliably
+  // (a plain `org.settings = {...}` assignment can lose updates on Mixed/SubDoc
+  // fields when the existing settings is itself a subdoc instance).
+  const update = { $set: {} };
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [subKey, subValue] of Object.entries(value)) {
+        if (subValue !== undefined) update.$set[`settings.${key}.${subKey}`] = subValue;
+      }
+    } else {
+      update.$set[`settings.${key}`] = value;
+    }
+  }
+
+  if (Object.keys(update.$set).length > 0) {
+    await Organization.updateOne({ _id: org._id }, update);
+  }
+
+  const fresh = await Organization.findById(org._id);
+  res.json({ settings: fresh.settings });
 });

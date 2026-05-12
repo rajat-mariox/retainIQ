@@ -22,6 +22,8 @@ import ROIDashboard from './pages/ROIDashboard';
 import Leaderboard from './pages/Leaderboard';
 import Alerts from './pages/Alerts';
 import MyProductivity from './pages/MyProductivity';
+import EmployeeActivity from './pages/EmployeeActivity';
+import EmployeeActivityList from './pages/EmployeeActivityList';
 
 import { useAuthStore } from './store/authStore';
 
@@ -67,6 +69,8 @@ export default function App() {
           {/* Org / HR only */}
           <Route element={<RoleRoute allow={['ORG_ADMIN', 'HR_ADMIN']} />}>
             <Route path="/roi" element={<ROIDashboard />} />
+            <Route path="/employee-activity" element={<EmployeeActivityList />} />
+            <Route path="/employee-activity/:id" element={<EmployeeActivity />} />
           </Route>
 
           {/* Manager */}
