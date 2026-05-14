@@ -14,5 +14,6 @@ router.put('/:id/reject', requireRoles(ROLES.SUPER_ADMIN), ctrl.reject);
 // Department management within an org
 router.get('/departments/list', ctrl.departments);
 router.post('/departments', requireRoles(ROLES.ORG_ADMIN), ctrl.createDepartment);
+router.delete('/departments/:id', requireRoles(ROLES.ORG_ADMIN), ctrl.deleteDepartment);
 
 module.exports = router;

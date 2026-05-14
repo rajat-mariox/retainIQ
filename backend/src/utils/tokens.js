@@ -20,4 +20,28 @@ function verifyRefreshToken(token) {
   return jwt.verify(token, process.env.JWT_REFRESH_SECRET);
 }
 
-module.exports = { signAccessToken, signRefreshToken, verifyRefreshToken };
+function signAgentLaunchTicket(user) {
+  return jwt.sign(
+    { sub: user._id.toString(), role: user.role, purpose: 'agent-launch' },
+    process.env.JWT_SECRET,
+    { expiresIn: '60s' }
+  );
+}
+
+function verifyAgentLaunchTicket(token) {
+  const payload = jwt.verify(token, process.env.JWT_SECRET);
+  if (payload.purpose !== 'agent-launch') {
+    const err = new Error('Not an agent-launch ticket');
+    err.name = 'JsonWebTokenError';
+    throw err;
+  }
+  return payload;
+}
+
+module.exports = {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  signAgentLaunchTicket,
+  verifyAgentLaunchTicket,
+};

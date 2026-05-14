@@ -13,10 +13,23 @@ export default function Topbar() {
   const { user, organization, logout } = useAuthStore();
   const [open, setOpen] = useState(false);
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = () => {
+    // Tell the desktop activity agent (if running) to shut down too, so the
+    // web session and the agent session stay in sync. We hit the agent's
+    // loopback IPC server — silent, no Chrome protocol prompt. keepalive
+    // ensures the request survives the SPA navigation that follows.
+    if (user?.role === 'EMPLOYEE' || user?.role === 'MANAGER') {
+      fetch('http://127.0.0.1:48723/logout', {
+        method: 'POST',
+        keepalive: true,
+      }).catch(() => { /* agent isn't running — fine */ });
+    }
+    logout();
+    navigate('/login');
+  };
 
   return (
-    <header className="m-4 mb-0 flex items-center gap-4">
+    <header className="relative z-30 m-4 mb-0 flex items-center gap-4">
       {/* Search */}
       <div className="flex-1 glass px-2 py-2">
         <div className="relative">
@@ -51,8 +64,11 @@ export default function Topbar() {
 
           {open && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <div className="absolute right-0 mt-2 w-56 z-20 glass-strong overflow-hidden">
+              <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+              <div
+                className="absolute right-0 mt-2 w-56 z-50 glass-strong overflow-hidden"
+                style={{ background: 'rgba(15,21,48,0.98)' }}
+              >
                 <div className="p-3 border-b border-white/[0.06]">
                   <p className="text-sm font-medium text-ink-100">{user?.name}</p>
                   <p className="text-xs text-ink-400">{user?.email}</p>

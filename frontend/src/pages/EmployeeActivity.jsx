@@ -4,7 +4,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { ArrowLeft, Camera, Clock, Coffee, MousePointer2, Timer, X } from 'lucide-react';
+import { ArrowLeft, Camera, Clock, Coffee, MousePointer2, Sparkles, Timer, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import StatCard from '../components/StatCard';
 import ProductivityBadge from '../components/ProductivityBadge';
@@ -34,6 +34,8 @@ export default function EmployeeActivity() {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [previewShot, setPreviewShot] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiLoading, setAiLoading] = useState(true);
 
   useEffect(() => {
     if (!previewShot) return;
@@ -67,6 +69,15 @@ export default function EmployeeActivity() {
         setLoading(false);
       }
     })();
+
+    // AI summary loads independently so a slow LLM call never blocks the page.
+    setAiLoading(true);
+    setAiSummary(null);
+    activityService
+      .aiSummary(employeeId, { days: 30 })
+      .then((d) => setAiSummary(d))
+      .catch(() => { /* summary is optional — silent */ })
+      .finally(() => setAiLoading(false));
   }, [employeeId]);
 
   if (loading) return <LoadingSpinner label="Loading activity…" />;
@@ -185,6 +196,48 @@ export default function EmployeeActivity() {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="glass p-5 relative overflow-hidden">
+        <div
+          className="absolute -top-10 -right-10 w-48 h-48 rounded-3xl rotate-45"
+          style={{
+            background: 'linear-gradient(135deg, rgba(138,152,255,0.15), rgba(77,82,245,0.02))',
+            filter: 'blur(20px)',
+          }}
+        />
+        <div className="relative">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #8a98ff 0%, #4d52f5 100%)' }}
+              >
+                <Sparkles size={15} className="text-white" />
+              </div>
+              <h3 className="section-title">AI summary for HR</h3>
+            </div>
+            {aiSummary?.source && (
+              <span className="text-[10px] uppercase tracking-wider text-ink-500">
+                {aiSummary.source === 'openai' ? 'AI generated' : 'Deterministic'}
+              </span>
+            )}
+          </div>
+          {aiLoading ? (
+            <div className="space-y-2">
+              <div className="h-3 rounded bg-white/[0.06] animate-pulse w-11/12" />
+              <div className="h-3 rounded bg-white/[0.06] animate-pulse w-9/12" />
+              <div className="h-3 rounded bg-white/[0.06] animate-pulse w-6/12" />
+            </div>
+          ) : aiSummary?.summary ? (
+            <p className="text-sm text-ink-200 leading-relaxed">{aiSummary.summary}</p>
+          ) : (
+            <p className="text-sm text-ink-400">No summary available yet.</p>
+          )}
+          <p className="text-[11px] text-ink-500 italic mt-3">
+            Decision-support insight only — never the sole basis for an employment decision.
+          </p>
         </div>
       </div>
 

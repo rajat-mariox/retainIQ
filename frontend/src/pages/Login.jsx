@@ -10,6 +10,26 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
 
+  const launchActivityAgent = async () => {
+    try {
+      const { ticket } = await authService.agentLaunchTicket();
+      // Setting window.location.href is what triggers Chrome's
+      // "This site is trying to open …" prompt. Iframes get silently
+      // suppressed for custom protocols in modern Chrome.
+      window.location.href = `retainiq-agent://launch?ticket=${encodeURIComponent(ticket)}`;
+      toast.success('Opening Activity Agent…');
+      return true;
+    } catch (err) {
+      console.warn('Activity agent launch failed:', err);
+      toast.error(
+        err.response?.status === 404
+          ? 'Agent endpoint missing — backend restart required'
+          : err.response?.data?.error || 'Could not open Activity Agent'
+      );
+      return false;
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -22,7 +42,15 @@ export default function Login() {
                  : role === 'MANAGER'     ? '/manager'
                                           : '/dashboard';
       toast.success(`Welcome back, ${data.user.name}`);
-      navigate(dest);
+      if (role === 'EMPLOYEE' || role === 'MANAGER') {
+        await launchActivityAgent();
+        // Give Chrome a moment to surface the protocol-open prompt before
+        // we SPA-navigate away — without this delay the route change can
+        // cancel the pending external-protocol dialog.
+        setTimeout(() => navigate(dest), 600);
+      } else {
+        navigate(dest);
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
     } finally { setLoading(false); }

@@ -4,6 +4,7 @@ const AppUsageLog = require('../models/AppUsageLog');
 const ProductivityScore = require('../models/ProductivityScore');
 const Employee = require('../models/Employee');
 const PulseSurvey = require('../models/PulseSurvey');
+const Task = require('../models/Task');
 const { HttpError } = require('../middlewares/errorHandler');
 
 const ENGINE_VERSION = 'activity-agent-v1';
@@ -28,11 +29,24 @@ async function buildDailyMetrics(organizationId, employeeId, date = new Date()) 
   const next = new Date(day);
   next.setDate(day.getDate() + 1);
 
-  const [sessions, activityLog, appUsage, pulse] = await Promise.all([
+  const [sessions, activityLog, appUsage, pulse, tasksCompletedToday, tasksOverdueOpen] = await Promise.all([
     ActivitySession.find({ organizationId, employeeId, date: day }),
     ActivityLog.findOne({ organizationId, employeeId, date: day }),
     AppUsageLog.find({ organizationId, employeeId, capturedAt: { $gte: day, $lt: next } }),
     PulseSurvey.findOne({ organizationId, employeeId, createdAt: { $gte: day, $lt: next } }).sort({ createdAt: -1 }),
+    Task.countDocuments({
+      organizationId,
+      employeeId,
+      status: 'completed',
+      completedAt: { $gte: day, $lt: next },
+    }),
+    // Open (pending) tasks whose due date has already passed as of this day.
+    Task.countDocuments({
+      organizationId,
+      employeeId,
+      status: 'pending',
+      dueDate: { $ne: null, $lt: next },
+    }),
   ]);
 
   const sessionTotals = sessions.reduce((acc, s) => {
@@ -59,8 +73,10 @@ async function buildDailyMetrics(organizationId, employeeId, date = new Date()) 
     idleMinutes: sessionTotals.idleMinutes || activityLog?.idleMinutes || 0,
     breakMinutes: sessionTotals.breakMinutes || activityLog?.breakMinutes || 0,
     totalMinutes: sessionTotals.totalMinutes || activityLog?.totalLoggedMinutes || 0,
-    tasksCompleted: activityLog?.tasksCompleted || 0,
-    tasksOverdue: activityLog?.tasksOverdue || 0,
+    // Live counts from the Task collection take precedence; fall back to any
+    // value externally pushed into ActivityLog (legacy / source-system ingest).
+    tasksCompleted: tasksCompletedToday || activityLog?.tasksCompleted || 0,
+    tasksOverdue: tasksOverdueOpen || activityLog?.tasksOverdue || 0,
     productiveSeconds,
     neutralSeconds,
     unproductiveSeconds,

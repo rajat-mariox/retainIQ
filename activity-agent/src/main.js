@@ -1,10 +1,16 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const axios = require('axios');
 const screenshot = require('screenshot-desktop');
 const cron = require('node-cron');
 const config = require('../config');
+
+// Local IPC HTTP server — lets the web app push signals (e.g. logout) to the
+// running agent without triggering Chrome's custom-protocol prompt. Bound to
+// loopback only, so only processes on this machine can reach it.
+const IPC_PORT = 48723;
 
 // active-win v9+ is ESM-only and exports `activeWindow` (no default export).
 // Resolve the module once and reuse the function reference.
@@ -462,6 +468,8 @@ async function createWindow() {
   emitState();
 }
 
+const AGENT_ALLOWED_ROLES = ['EMPLOYEE', 'MANAGER'];
+
 ipcMain.handle('auth:login', async (_event, credentials) => {
   let data;
   try {
@@ -475,11 +483,215 @@ ipcMain.handle('auth:login', async (_event, credentials) => {
     }
     throw new Error(err.message || 'Login failed');
   }
-  if (data.user?.role !== 'EMPLOYEE') throw new Error('Only employee accounts can use the activity agent');
+  if (!AGENT_ALLOWED_ROLES.includes(data.user?.role)) {
+    throw new Error('Only employee and manager accounts can use the activity agent');
+  }
   saveAuth(data);
   emitState();
   return data;
 });
+
+// Exchange a short-lived launch ticket (delivered via retainiq-agent:// deep
+// link from the web app) for a full session. Used to auto-login the agent
+// after the user logs in on the web.
+async function exchangeLaunchTicket(ticket) {
+  if (!ticket) throw new Error('Missing launch ticket');
+  let data;
+  try {
+    const res = await axios.post(`${config.API_BASE_URL}/auth/agent-exchange`, { ticket });
+    data = res.data;
+  } catch (err) {
+    const serverMsg = err.response?.data?.error || err.response?.data?.message;
+    throw new Error(serverMsg || err.message || 'Agent launch ticket exchange failed');
+  }
+  if (!AGENT_ALLOWED_ROLES.includes(data.user?.role)) {
+    throw new Error('Only employee and manager accounts can use the activity agent');
+  }
+  saveAuth(data);
+  emitState();
+  return data;
+}
+
+function extractLaunchTicket(urlOrArg) {
+  if (!urlOrArg || typeof urlOrArg !== 'string') return null;
+  if (!urlOrArg.toLowerCase().startsWith('retainiq-agent://')) return null;
+  try {
+    const url = new URL(urlOrArg);
+    return url.searchParams.get('ticket');
+  } catch {
+    return null;
+  }
+}
+
+function findLaunchUrlInArgv(argv) {
+  if (!Array.isArray(argv)) return null;
+  return argv.find((a) => typeof a === 'string' && a.toLowerCase().startsWith('retainiq-agent://')) || null;
+}
+
+function parseDeepLinkAction(urlOrArg) {
+  if (!urlOrArg || typeof urlOrArg !== 'string') return null;
+  if (!urlOrArg.toLowerCase().startsWith('retainiq-agent://')) return null;
+  try {
+    const url = new URL(urlOrArg);
+    // retainiq-agent://launch?ticket=… → hostname='launch'
+    // retainiq-agent://logout         → hostname='logout'
+    return (url.hostname || '').toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+// End the work-day cleanly: flush buffers, end the session, post end-day
+// summary. Used by both the manual "End Work" button and the web-driven
+// remote logout. Safe to call when no session is active (will short-circuit).
+async function endWorkDay() {
+  if (!auth?.accessToken || !session?._id) {
+    stopTimers();
+    status = 'Ended';
+    pendingSync = freshSyncBuffer();
+    emitState();
+    return { session: null, endDay: null };
+  }
+  await trackActiveWindow();
+  await Promise.all([syncEvents(), syncAppUsage()]);
+  await syncDailyAggregate({ force: true });
+
+  let sessionData = null;
+  try {
+    const res = await api().post('/activity/session/end', {});
+    sessionData = res.data;
+    session = sessionData;
+  } catch (err) {
+    console.error('[agent] session/end failed:', err.message);
+  }
+
+  let endDayResult = null;
+  try {
+    const { data } = await api().post('/activity/end-day', {
+      date: todayKey(),
+      totalWorkMinutes: today.activeMinutes + today.idleMinutes + today.breakMinutes,
+      activeMinutes: today.activeMinutes,
+      idleMinutes: today.idleMinutes,
+      breakMinutes: today.breakMinutes,
+    });
+    endDayResult = data;
+  } catch (err) {
+    console.error('[agent] end-day failed:', err.message);
+  }
+
+  status = 'Ended';
+  pendingSync = freshSyncBuffer();
+  stopTimers();
+  emitState();
+  return { session: sessionData, endDay: endDayResult };
+}
+
+// Triggered by retainiq-agent://logout from the web app — finalize any
+// active work session, drop local auth, then quit the agent process.
+async function handleRemoteLogout() {
+  console.log('[agent] remote logout received from web — closing agent');
+  try {
+    // Cap cleanup at 5s so a hung network doesn't trap the user.
+    await Promise.race([
+      endWorkDay(),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+  } catch (err) {
+    console.error('[agent] cleanup during remote logout failed:', err.message);
+  }
+  clearAuth();
+  session = null;
+  status = 'Ended';
+  emitState();
+  // Give the renderer one tick to receive the state update, then quit.
+  setTimeout(() => app.quit(), 200);
+}
+
+async function handleLaunchUrl(urlOrArg, { focus = true } = {}) {
+  const action = parseDeepLinkAction(urlOrArg);
+  if (!action) return;
+
+  if (action === 'logout') {
+    await handleRemoteLogout();
+    return;
+  }
+
+  if (action === 'launch') {
+    const ticket = extractLaunchTicket(urlOrArg);
+    if (!ticket) return;
+    try {
+      await exchangeLaunchTicket(ticket);
+      console.log('[agent] deep-link login OK — session established');
+    } catch (err) {
+      console.error('[agent] deep-link login FAILED:', err.message);
+      win?.webContents.send('agent:launch-error', err.message);
+    }
+    if (focus && win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    return;
+  }
+
+  console.warn(`[agent] unknown deep-link action: "${action}"`);
+}
+
+let ipcServer = null;
+function startIpcServer() {
+  if (ipcServer) return;
+  ipcServer = http.createServer((req, res) => {
+    // CORS — only allow localhost dev origins. The server itself is bound to
+    // loopback below, so this is just defense-in-depth.
+    const origin = req.headers.origin || '';
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/health') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({
+        ok: true,
+        authenticated: Boolean(auth?.accessToken),
+        status,
+      }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/logout') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ok: true }));
+      // Respond first, then run cleanup + quit — the fetch should not hang
+      // while we end-day on the backend.
+      handleRemoteLogout().catch((err) => {
+        console.error('[agent] handleRemoteLogout from IPC failed:', err.message);
+      });
+      return;
+    }
+
+    res.statusCode = 404;
+    res.end();
+  });
+
+  ipcServer.on('error', (err) => {
+    console.error(`[agent] local IPC server error: ${err.code || ''} ${err.message}`);
+  });
+
+  ipcServer.listen(IPC_PORT, '127.0.0.1', () => {
+    console.log(`[agent] local IPC server listening on 127.0.0.1:${IPC_PORT}`);
+  });
+}
 
 ipcMain.handle('auth:logout', async () => {
   stopTimers();
@@ -520,48 +732,65 @@ ipcMain.handle('agent:resume', async () => {
   return data;
 });
 
-ipcMain.handle('agent:end', async () => {
-  await trackActiveWindow();
-  await Promise.all([syncEvents(), syncAppUsage()]);
-
-  // Push any remaining buffered aggregates so /end-day can replace with the full picture.
-  await syncDailyAggregate({ force: true });
-
-  // End the session record (legacy per-event flow).
-  const { data: sessionData } = await api().post('/activity/session/end', {});
-  session = sessionData;
-
-  // Final daily summary + immediate productivity score.
-  let endDayResult = null;
-  try {
-    const { data } = await api().post('/activity/end-day', {
-      date: todayKey(),
-      totalWorkMinutes: today.activeMinutes + today.idleMinutes + today.breakMinutes,
-      activeMinutes: today.activeMinutes,
-      idleMinutes: today.idleMinutes,
-      breakMinutes: today.breakMinutes,
-    });
-    endDayResult = data;
-  } catch (err) {
-    console.error('[agent] end-day failed', err.message);
-  }
-
-  status = 'Ended';
-  pendingSync = freshSyncBuffer();
-  stopTimers();
-  emitState();
-  return { session: sessionData, endDay: endDayResult };
-});
+ipcMain.handle('agent:end', async () => endWorkDay());
 
 ipcMain.handle('agent:get-state', async () => {
   emitState();
   return { authenticated: Boolean(auth?.accessToken), user: auth?.user, status, session, today, lastScreenshotAt, config };
 });
 
-app.whenReady().then(() => {
-  loadAuth();
-  startInputHooks();
-  createWindow();
+// Register retainiq-agent:// so the web app can deep-link the user back into
+// the agent with a launch ticket. Must run before app.whenReady().
+const PROTOCOL = 'retainiq-agent';
+if (process.defaultApp) {
+  // Dev mode: electron-prebuilt-compile launches via `electron .` — pass the
+  // entry script so the OS can re-invoke us with the deep-link URL appended.
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+// Single-instance lock — if a second launch happens (e.g. user clicks the
+// deep-link in the browser while the agent is already running), the OS spawns
+// a new process; we forward its argv to the original instance and exit.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const launchUrl = findLaunchUrlInArgv(argv);
+    if (launchUrl) handleLaunchUrl(launchUrl);
+    else if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+
+  // macOS delivers protocol URLs through open-url instead of argv.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleLaunchUrl(url);
+  });
+
+  app.whenReady().then(async () => {
+    loadAuth();
+    startInputHooks();
+    startIpcServer();
+    await createWindow();
+    // First-launch case: the protocol URL is appended to our own argv.
+    const launchUrl = findLaunchUrlInArgv(process.argv);
+    if (launchUrl) handleLaunchUrl(launchUrl);
+  });
+}
+
+app.on('before-quit', () => {
+  if (ipcServer) {
+    try { ipcServer.close(); } catch {}
+    ipcServer = null;
+  }
 });
 
 app.on('window-all-closed', () => {
