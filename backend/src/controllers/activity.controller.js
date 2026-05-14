@@ -12,6 +12,8 @@ const Employee = require('../models/Employee');
 const { ROLES } = require('../config/constants');
 const { assertEmployeeAccess, resolveSubmittingEmployee } = require('../services/activityAccessService');
 const { calculateAndPersistActivityScore } = require('../services/activityProductivityService');
+const { generateActivitySummary } = require('../services/productivityAIService');
+const ProductivityScore = require('../models/ProductivityScore');
 
 const activitySchema = z.object({
   employeeId: z.string(),
@@ -457,6 +459,91 @@ exports.endDay = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ log, score: scoreResult?.score || null });
+});
+
+// HR-friendly narrative summary for the employee-activity detail page.
+// Aggregates the same 30-day window the page itself shows, plus the latest
+// productivity score and top apps, and asks the AI service for a 2–3 sentence
+// write-up (deterministic fallback when no OpenAI key is set).
+exports.aiSummary = asyncHandler(async (req, res) => {
+  const employee = await assertEmployeeAccess(req, req.params.employeeId);
+  const days = Math.min(90, parseInt(req.query.days) || 30);
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+  const periodStart = new Date(Date.now() - 2 * days * 24 * 3600 * 1000);
+  const priorEnd = since;
+
+  const [sessions, logs, appUsage, currentScore, priorScore] = await Promise.all([
+    ActivitySession.find({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      date: { $gte: since },
+    }),
+    ActivityLog.find({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      date: { $gte: since },
+    }),
+    AppUsageLog.find({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      capturedAt: { $gte: since },
+    }),
+    ProductivityScore.findOne({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      period: 'daily',
+    }).sort({ date: -1 }),
+    ProductivityScore.findOne({
+      organizationId: req.organizationId,
+      employeeId: employee._id,
+      period: 'daily',
+      date: { $gte: periodStart, $lt: priorEnd },
+    }).sort({ date: -1 }),
+  ]);
+
+  const sessionTotals = sessions.reduce((acc, s) => {
+    acc.totalMinutes += s.totalMinutes || 0;
+    acc.activeMinutes += s.activeMinutes || 0;
+    acc.idleMinutes += s.idleMinutes || 0;
+    acc.breakMinutes += s.breakMinutes || 0;
+    return acc;
+  }, { totalMinutes: 0, activeMinutes: 0, idleMinutes: 0, breakMinutes: 0 });
+
+  // Fall back to ActivityLog totals when sessions weren't recorded (e.g. the
+  // agent sent /sync but never /session/end).
+  if (!sessionTotals.totalMinutes) {
+    for (const l of logs) {
+      sessionTotals.totalMinutes += l.totalLoggedMinutes || l.totalWorkMinutes || 0;
+      sessionTotals.activeMinutes += l.activeMinutes || 0;
+      sessionTotals.idleMinutes += l.idleMinutes || 0;
+      sessionTotals.breakMinutes += l.breakMinutes || 0;
+    }
+  }
+
+  const appAgg = {};
+  for (const a of appUsage) {
+    const key = a.appName || 'Unknown';
+    if (!appAgg[key]) appAgg[key] = { appName: key, durationSeconds: 0 };
+    appAgg[key].durationSeconds += a.durationSeconds || 0;
+  }
+  const topApps = Object.values(appAgg).sort((a, b) => b.durationSeconds - a.durationSeconds);
+
+  const result = await generateActivitySummary({
+    totals: sessionTotals,
+    score: currentScore ? { score: currentScore.score, band: currentScore.band } : null,
+    prior: priorScore ? { score: priorScore.score } : null,
+    topApps,
+    period: `last ${days} days`,
+    role: employee.designation || null,
+  });
+
+  res.json({
+    summary: result.summary,
+    source: result.source,
+    period: { days, since },
+    totals: sessionTotals,
+    score: currentScore ? { score: currentScore.score, band: currentScore.band, date: currentScore.date } : null,
+  });
 });
 
 exports.appsForEmployee = asyncHandler(async (req, res) => {

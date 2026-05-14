@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Activity, Camera } from 'lucide-react';
+import { Plus, Activity, Camera, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { settingsService, orgService, userService, employeeService, activityService } from '../services';
 import { LoadingSpinner } from '../components/UIStates';
@@ -117,6 +117,16 @@ export default function Settings() {
       toast.success('Department added');
       load();
     } catch { toast.error('Failed to add'); }
+  };
+
+  const removeDept = async (dept) => {
+    try {
+      await orgService.deleteDepartment(dept._id);
+      toast.success(`Removed "${dept.name}"`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to remove');
+    }
   };
 
   const addOrgUser = async (e) => {
@@ -290,7 +300,10 @@ export default function Settings() {
             />
             <p className="text-xs text-ink-400 mt-1.5">Recommended: 10 minutes. Min 1, max 240.</p>
           </div>
-          <div className="flex items-end">
+          <div>
+            <label className="label opacity-0 select-none pointer-events-none" aria-hidden="true">
+              Toggle
+            </label>
             <SettingToggle
               checked={settings.agent?.screenshotsEnabled !== false}
               onChange={(b) => setSettings({
@@ -326,7 +339,23 @@ export default function Settings() {
         <h3 className="section-title mb-4">Departments</h3>
         <div className="flex flex-wrap gap-2 mb-4">
           {departments.map((d) => (
-            <span key={d._id} className="badge bg-white/[0.04] text-ink-200 border-white/10">{d.name}</span>
+            <span
+              key={d._id}
+              className="badge bg-white/[0.04] text-ink-200 border-white/10 inline-flex items-center gap-1.5"
+            >
+              {d.name}
+              {role === 'ORG_ADMIN' && (
+                <button
+                  type="button"
+                  onClick={() => removeDept(d)}
+                  className="-mr-1 p-0.5 rounded-full text-ink-400 hover:bg-rose-400/15 hover:text-rose-300 transition"
+                  title={`Remove ${d.name}`}
+                  aria-label={`Remove ${d.name}`}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </span>
           ))}
           {departments.length === 0 && <p className="text-sm text-ink-400">No departments yet.</p>}
         </div>
@@ -369,18 +398,24 @@ export default function Settings() {
             </table>
           </div>
 
-          <form onSubmit={addOrgUser} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <form onSubmit={addOrgUser} className="grid grid-cols-1 md:grid-cols-2 gap-3" autoComplete="off">
+            {/* Honeypot inputs to defeat aggressive Chrome credential autofill,
+                which ignores autoComplete="off" on real fields. The browser
+                fills these instead and leaves the real fields alone. */}
+            <input type="text" name="fakeusernameremembered" autoComplete="username" tabIndex={-1} aria-hidden="true" style={{ display: 'none' }} />
+            <input type="password" name="fakepasswordremembered" autoComplete="current-password" tabIndex={-1} aria-hidden="true" style={{ display: 'none' }} />
+
             <div><label className="label">Name</label>
-              <input className="input" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} /></div>
+              <input className="input" required value={newUser.name} autoComplete="off" onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} /></div>
             <div><label className="label">Email</label>
-              <input className="input" type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} /></div>
+              <input className="input" type="email" required value={newUser.email} autoComplete="off" onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} /></div>
             <div><label className="label">Role</label>
               <select className="input" value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}>
                 <option value="HR_ADMIN">HR Admin</option>
                 <option value="MANAGER">Manager</option>
               </select></div>
             <div><label className="label">Password</label>
-              <input className="input" type="password" required minLength={8} value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} /></div>
+              <input className="input" type="password" required minLength={8} value={newUser.password} autoComplete="new-password" onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} /></div>
             {newUser.role === 'MANAGER' && (
               <>
                 <div><label className="label">Department</label>

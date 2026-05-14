@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { MessageSquare, TrendingUp, Heart, Target } from 'lucide-react';
+import { MessageSquare, TrendingUp, Heart, Target, Settings as SettingsIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pulseService } from '../services';
 import { LoadingSpinner, EmptyState } from '../components/UIStates';
@@ -27,12 +28,18 @@ export default function PulseInsights() {
   const averages = data?.averages;
   const trend = data?.monthlyTrend || [];
   const needsAttention = data?.needsAttention || [];
+  const extras = data?.extras || [];
   const hasPulseData = averages?.sampleSize > 0;
 
   if (!hasPulseData) {
     return (
       <div className="space-y-5">
-        <h1 className="text-3xl font-bold text-ink-100 tracking-tight">Pulse Insights</h1>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <h1 className="text-3xl font-bold text-ink-100 tracking-tight">Pulse Insights</h1>
+          <Link to="/pulse/questions" className="btn-secondary flex items-center gap-2">
+            <SettingsIcon size={14} /> Manage questions
+          </Link>
+        </div>
         <EmptyState
           icon={MessageSquare}
           title="No pulse data yet"
@@ -44,10 +51,15 @@ export default function PulseInsights() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-iris-300 text-xs font-medium tracking-wider uppercase mb-1.5">Engagement</p>
-        <h1 className="text-3xl font-bold text-ink-100 tracking-tight">Pulse Insights</h1>
-        <p className="text-sm text-ink-400 mt-1.5">Anonymous mood, workload, support, and growth signals</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-iris-300 text-xs font-medium tracking-wider uppercase mb-1.5">Engagement</p>
+          <h1 className="text-3xl font-bold text-ink-100 tracking-tight">Pulse Insights</h1>
+          <p className="text-sm text-ink-400 mt-1.5">Anonymous mood, workload, support, and growth signals</p>
+        </div>
+        <Link to="/pulse/questions" className="btn-secondary flex items-center gap-2 mt-1">
+          <SettingsIcon size={14} /> Manage questions
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -77,6 +89,26 @@ export default function PulseInsights() {
             <span className="inline-flex items-center gap-2 text-ink-300"><span className="w-3 h-0.5 bg-cream-400 rounded-full" /> Workload</span>
             <span className="inline-flex items-center gap-2 text-ink-300"><span className="w-3 h-0.5 bg-mint-400 rounded-full" /> Support</span>
             <span className="inline-flex items-center gap-2 text-ink-300"><span className="w-3 h-0.5 bg-rose-400 rounded-full" /> Growth</span>
+          </div>
+        </div>
+      )}
+
+      {extras.length > 0 && (
+        <div className="glass p-5">
+          <h3 className="section-title mb-4">Custom questions</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {extras.map((q) => (
+              <div key={q.questionId} className="rounded-xl border border-white/[0.06] bg-white/[0.04] px-4 py-3">
+                <p className="text-sm text-ink-100 leading-snug">{q.label}</p>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-bold text-iris-300">
+                    {q.average ?? '-'}
+                  </span>
+                  <span className="text-xs text-ink-400">/5</span>
+                  <span className="text-[11px] text-ink-500 ml-auto">{q.sampleSize} responses</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

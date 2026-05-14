@@ -31,6 +31,7 @@ router.post('/bulk', requireRoles(ROLES.ORG_ADMIN, ROLES.HR_ADMIN), ctrl.bulk);
 // --- Read endpoints for managers / HR / employee (own data) ---------------
 router.get('/:employeeId/screenshots', ctrl.screenshotsForEmployee);
 router.get('/:employeeId/apps', ctrl.appsForEmployee);
+router.get('/:employeeId/ai-summary', ctrl.aiSummary);
 router.get('/:employeeId', ctrl.forEmployee);
 
 module.exports = router;

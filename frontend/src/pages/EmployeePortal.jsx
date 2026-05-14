@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, MessageSquare } from 'lucide-react';
+import { Heart, MessageSquare, CheckSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
 import { pulseService } from '../services';
@@ -31,7 +31,14 @@ export function EmployeePortal() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <a href="/portal/tasks" className="glass p-5 hover:bg-white/[0.04] transition group">
+          <div className="w-10 h-10 rounded-xl bg-iris-400/15 border border-iris-400/30 flex items-center justify-center mb-3">
+            <CheckSquare size={18} className="text-iris-300" />
+          </div>
+          <p className="font-semibold text-ink-100">My tasks</p>
+          <p className="text-sm text-ink-400 mt-1.5">Log what you are working on. Completed tasks feed your productivity score.</p>
+        </a>
         <a href="/portal/pulse" className="glass p-5 hover:bg-white/[0.04] transition group">
           <div className="w-10 h-10 rounded-xl bg-iris-400/15 border border-iris-400/30 flex items-center justify-center mb-3">
             <MessageSquare size={18} className="text-iris-300" />
@@ -63,7 +70,22 @@ export function PulseSurvey() {
     comment: '',
     requestHRCallback: false,
   });
+  const [extraQuestions, setExtraQuestions] = useState([]);
+  const [extraValues, setExtraValues] = useState({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    pulseService
+      .questions(true)
+      .then((data) => {
+        const items = data.items || [];
+        setExtraQuestions(items);
+        const init = {};
+        items.forEach((q) => { init[q._id] = 4; });
+        setExtraValues(init);
+      })
+      .catch(() => { /* extras are optional — silent */ });
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -75,6 +97,10 @@ export function PulseSurvey() {
         workloadScore: parseInt(answers.workloadScore),
         managerSupportScore: parseInt(answers.managerSupportScore),
         growthSatisfactionScore: parseInt(answers.growthSatisfactionScore),
+        extraAnswers: extraQuestions.map((q) => ({
+          questionId: q._id,
+          value: parseInt(extraValues[q._id] ?? 3),
+        })),
       });
       toast.success('Thanks for sharing');
       navigate('/portal');
@@ -120,6 +146,17 @@ export function PulseSurvey() {
             value={answers.growthSatisfactionScore}
             onChange={(v) => setAnswers({ ...answers, growthSatisfactionScore: v })}
           />
+
+          {extraQuestions.map((q) => (
+            <RangeQuestion
+              key={q._id}
+              label={q.label}
+              lo={q.lowLabel || 'Low'}
+              hi={q.highLabel || 'High'}
+              value={extraValues[q._id] ?? 4}
+              onChange={(v) => setExtraValues({ ...extraValues, [q._id]: v })}
+            />
+          ))}
 
           <div>
             <label className="label">Anything you want to share? (optional)</label>

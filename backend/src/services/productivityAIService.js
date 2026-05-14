@@ -104,4 +104,98 @@ Snapshot: ${JSON.stringify(minimal)}`;
   }
 }
 
-module.exports = { generateInsight };
+// ---------------------------------------------------------------------------
+// Activity-page summary — a short, HR-friendly narrative shown at the bottom
+// of /employees/:id/activity. Same OpenAI-or-static fallback pattern as
+// generateInsight; only structured aggregates are sent to the model.
+// ---------------------------------------------------------------------------
+
+function fmtMinutes(value = 0) {
+  const v = Math.max(0, Math.round(value));
+  const h = Math.floor(v / 60);
+  const m = v % 60;
+  if (!h) return `${m}m`;
+  if (!m) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function staticActivitySummary({ totals, score, prior, topApps, period, flags }) {
+  const sentences = [];
+
+  const total = fmtMinutes(totals.totalMinutes);
+  const active = fmtMinutes(totals.activeMinutes);
+  const idle = fmtMinutes(totals.idleMinutes);
+  sentences.push(`Worked ${total} over the ${period}, with ${active} focused time and ${idle} idle.`);
+
+  if (score) {
+    const delta = prior ? score.score - prior.score : null;
+    let trend = `is stable at ${score.score}/100`;
+    if (delta !== null && delta <= -8) trend = `dropped to ${score.score}/100 (down ${Math.abs(delta)} from the prior period)`;
+    else if (delta !== null && delta >= 8) trend = `improved to ${score.score}/100 (up ${delta} from the prior period)`;
+    sentences.push(`Productivity ${trend} — band ${score.band || 'Unrated'}.`);
+  }
+
+  const notes = [];
+  if (flags.highIdle) notes.push('idle share is elevated');
+  if (flags.lowActive) notes.push('focused time is low');
+  if (flags.heavyMeetings) notes.push('meeting/comms apps dominate the workday');
+  if (notes.length) sentences.push(`Notes: ${notes.join('; ')}.`);
+
+  if (topApps?.length) {
+    sentences.push(`Top apps: ${topApps.slice(0, 3).map((a) => a.appName).join(', ')}.`);
+  }
+
+  return { summary: sentences.join(' '), source: 'static' };
+}
+
+async function generateActivitySummary({ totals, score, prior, topApps = [], period = 'last 30 days', role }) {
+  const workMinutes = Math.max(1, (totals.totalMinutes || 0));
+  const flags = {
+    highIdle: (totals.idleMinutes || 0) / workMinutes > 0.25,
+    lowActive: (totals.activeMinutes || 0) / workMinutes < 0.4,
+    heavyMeetings:
+      topApps.slice(0, 3).some((a) => /(slack|teams|zoom|meet|webex)/i.test(a.appName || '')) &&
+      (totals.activeMinutes || 0) / workMinutes < 0.55,
+  };
+
+  const client = getClient();
+  if (!client) return staticActivitySummary({ totals, score, prior, topApps, period, flags });
+
+  const minimal = {
+    role: role || null,
+    period,
+    totals: {
+      total: totals.totalMinutes || 0,
+      active: totals.activeMinutes || 0,
+      idle: totals.idleMinutes || 0,
+      break: totals.breakMinutes || 0,
+    },
+    score: score ? { score: score.score, band: score.band } : null,
+    prior: prior ? { score: prior.score } : null,
+    topApps: topApps.slice(0, 5).map((a) => ({ appName: a.appName, seconds: a.durationSeconds })),
+    flags,
+  };
+
+  const system = `You are a workforce productivity advisor. You produce decision-support guidance — never employment verdicts. Output strict JSON.`;
+  const user = `Given this anonymized activity snapshot, return a JSON object with one field "summary": a 2–3 sentence narrative for an HR admin. Style example: "employee1 worked 7h 20m today, had 4h 10m focused time, 45m idle time. Productivity is stable but meeting load is high." Use the totals verbatim (in h/m). Do not invent numbers. Snapshot: ${JSON.stringify(minimal)}`;
+
+  try {
+    const resp = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 250,
+    });
+    const parsed = JSON.parse(resp.choices?.[0]?.message?.content || '{}');
+    return {
+      summary: parsed.summary || staticActivitySummary({ totals, score, prior, topApps, period, flags }).summary,
+      source: 'openai',
+    };
+  } catch (err) {
+    console.warn('[ai] activity summary fell back to static:', err.message);
+    return staticActivitySummary({ totals, score, prior, topApps, period, flags });
+  }
+}
+
+module.exports = { generateInsight, generateActivitySummary };

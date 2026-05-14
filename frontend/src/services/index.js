@@ -5,6 +5,7 @@ export const authService = {
   login: (payload) => api.post('/auth/login', payload).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
   logout: () => api.post('/auth/logout').then((r) => r.data),
+  agentLaunchTicket: () => api.post('/auth/agent-launch-ticket').then((r) => r.data),
 };
 
 export const employeeService = {
@@ -38,6 +39,11 @@ export const pulseService = {
   submit: (payload) => api.post('/pulse', payload).then((r) => r.data),
   myHistory: () => api.get('/pulse/me').then((r) => r.data),
   dashboard: () => api.get('/pulse/dashboard').then((r) => r.data),
+  questions: (activeOnly = false) =>
+    api.get('/pulse/questions', { params: activeOnly ? { activeOnly: true } : {} }).then((r) => r.data),
+  createQuestion: (payload) => api.post('/pulse/questions', payload).then((r) => r.data),
+  updateQuestion: (id, payload) => api.put(`/pulse/questions/${id}`, payload).then((r) => r.data),
+  deleteQuestion: (id) => api.delete(`/pulse/questions/${id}`).then((r) => r.data),
 };
 
 export const notificationService = {
@@ -58,6 +64,7 @@ export const orgService = {
   reject: (id, payload = {}) => api.put(`/organizations/${id}/reject`, payload).then((r) => r.data),
   departments: () => api.get('/organizations/departments/list').then((r) => r.data),
   createDepartment: (payload) => api.post('/organizations/departments', payload).then((r) => r.data),
+  deleteDepartment: (id) => api.delete(`/organizations/departments/${id}`).then((r) => r.data),
 };
 
 export const userService = {
@@ -78,6 +85,7 @@ export const activityService = {
   forEmployeeOnDate: (employeeId, date) => api.get(`/activity/${employeeId}`, { params: { date } }).then((r) => r.data),
   screenshots: (employeeId, params = {}) => api.get(`/activity/${employeeId}/screenshots`, { params }).then((r) => r.data),
   apps: (employeeId, params = {}) => api.get(`/activity/${employeeId}/apps`, { params }).then((r) => r.data),
+  aiSummary: (employeeId, params = {}) => api.get(`/activity/${employeeId}/ai-summary`, { params }).then((r) => r.data),
 };
 
 export const productivityService = {
@@ -100,6 +108,13 @@ export const reportService = {
 export const roiService = {
   dashboard: (period = 'monthly') => api.get('/roi/dashboard', { params: { period } }).then((r) => r.data),
   calculate: (employeeId) => api.post(`/roi/calculate/${employeeId}`).then((r) => r.data),
+};
+
+export const taskService = {
+  list: (params) => api.get('/tasks', { params }).then((r) => r.data),
+  create: (payload) => api.post('/tasks', payload).then((r) => r.data),
+  update: (id, payload) => api.put(`/tasks/${id}`, payload).then((r) => r.data),
+  remove: (id) => api.delete(`/tasks/${id}`).then((r) => r.data),
 };
 
 export const alertService = {

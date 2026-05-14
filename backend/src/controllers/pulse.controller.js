@@ -2,10 +2,16 @@ const { z } = require('zod');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
 const PulseSurvey = require('../models/PulseSurvey');
+const PulseQuestion = require('../models/PulseQuestion');
 const Employee = require('../models/Employee');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { ROLES } = require('../config/constants');
+
+const extraAnswerInput = z.object({
+  questionId: z.string(),
+  value: z.number().int().min(1).max(5),
+});
 
 const submitSchema = z.object({
   moodScore: z.number().int().min(1).max(5),
@@ -15,6 +21,7 @@ const submitSchema = z.object({
   comment: z.string().max(2000).optional(),
   isAnonymous: z.boolean().optional(),
   requestHRCallback: z.boolean().optional(),
+  extraAnswers: z.array(extraAnswerInput).optional().default([]),
 });
 
 exports.submit = asyncHandler(async (req, res) => {
@@ -23,8 +30,29 @@ exports.submit = asyncHandler(async (req, res) => {
   const emp = await Employee.findOne({ organizationId: req.organizationId, email: req.user.email });
   if (!emp) throw new HttpError(404, 'No employee record linked to this user');
 
+  // Resolve HR-defined extra questions and snapshot their label/type onto
+  // the response so historical surveys stay readable even if a question is
+  // later renamed or deactivated.
+  let extraAnswers = [];
+  if (data.extraAnswers.length) {
+    const ids = [...new Set(data.extraAnswers.map((a) => a.questionId))];
+    const questions = await PulseQuestion.find({
+      _id: { $in: ids },
+      organizationId: req.organizationId,
+      isActive: true,
+    });
+    const qById = new Map(questions.map((q) => [String(q._id), q]));
+    extraAnswers = data.extraAnswers
+      .filter((a) => qById.has(a.questionId))
+      .map((a) => {
+        const q = qById.get(a.questionId);
+        return { questionId: q._id, label: q.label, type: q.type, value: a.value };
+      });
+  }
+
   const doc = await PulseSurvey.create({
     ...data,
+    extraAnswers,
     organizationId: req.organizationId,
     employeeId: emp._id,
   });
@@ -98,6 +126,39 @@ exports.dashboard = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(20);
 
+  // Aggregate HR-defined extra questions. Use the question's current label
+  // (so a renamed question shows its new wording); fall back to the snapshot
+  // for questions that no longer exist.
+  const activeQuestions = await PulseQuestion.find({ organizationId: orgId });
+  const labelById = new Map(activeQuestions.map((q) => [String(q._id), q.label]));
+  const extrasAgg = new Map();
+  for (const s of surveys) {
+    for (const a of s.extraAnswers || []) {
+      const key = String(a.questionId);
+      if (!extrasAgg.has(key)) {
+        extrasAgg.set(key, {
+          questionId: key,
+          label: labelById.get(key) || a.label,
+          type: a.type,
+          sum: 0,
+          n: 0,
+        });
+      }
+      const bucket = extrasAgg.get(key);
+      if (typeof a.value === 'number') {
+        bucket.sum += a.value;
+        bucket.n += 1;
+      }
+    }
+  }
+  const extras = [...extrasAgg.values()].map((b) => ({
+    questionId: b.questionId,
+    label: b.label,
+    type: b.type,
+    average: b.n ? +(b.sum / b.n).toFixed(2) : null,
+    sampleSize: b.n,
+  }));
+
   res.json({
     averages: {
       mood: avg('moodScore'),
@@ -108,5 +169,6 @@ exports.dashboard = asyncHandler(async (req, res) => {
     },
     monthlyTrend: trend,
     needsAttention,
+    extras,
   });
 });

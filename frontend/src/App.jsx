@@ -14,6 +14,8 @@ import Settings from './pages/Settings';
 import Notifications from './pages/Notifications';
 import ManagerDashboard from './pages/ManagerDashboard';
 import { EmployeePortal, PulseSurvey } from './pages/EmployeePortal';
+import EmployeeTasks from './pages/EmployeeTasks';
+import PulseQuestionsAdmin from './pages/PulseQuestionsAdmin';
 import SuperAdminOrgs from './pages/SuperAdminOrgs';
 import ProductivityDashboard from './pages/ProductivityDashboard';
 import ProductivityDetail from './pages/ProductivityDetail';
@@ -51,6 +53,7 @@ export default function App() {
           <Route element={<RoleRoute allow={['ORG_ADMIN', 'HR_ADMIN']} />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/pulse" element={<PulseInsights />} />
+            <Route path="/pulse/questions" element={<PulseQuestionsAdmin />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
 
@@ -83,6 +86,7 @@ export default function App() {
             <Route path="/portal" element={<EmployeePortal />} />
             <Route path="/portal/productivity" element={<MyProductivity />} />
             <Route path="/portal/pulse" element={<PulseSurvey />} />
+            <Route path="/portal/tasks" element={<EmployeeTasks />} />
           </Route>
 
           {/* Super admin */}

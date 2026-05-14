@@ -31,6 +31,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const orgRoutes = require('./routes/organization.routes');
 const userRoutes = require('./routes/user.routes');
+const taskRoutes = require('./routes/task.routes');
 
 // Workforce Intelligence & Productivity Engine
 const activityRoutes = require('./routes/activity.routes');
@@ -64,6 +65,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/organizations', orgRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // Workforce Intelligence & Productivity Engine
 app.use('/api/activity', activityRoutes);

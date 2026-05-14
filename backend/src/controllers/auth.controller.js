@@ -1,7 +1,13 @@
 const { z } = require('zod');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
-const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../utils/tokens');
+const {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  signAgentLaunchTicket,
+  verifyAgentLaunchTicket,
+} = require('../utils/tokens');
 const { ORGANIZATION_APPROVAL_STATUS, ROLES } = require('../config/constants');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
@@ -119,4 +125,38 @@ exports.me = asyncHandler(async (req, res) => {
   let organization = null;
   if (req.user.organizationId) organization = await Organization.findById(req.user.organizationId);
   res.json({ user: req.user.toSafeJSON(), organization });
+});
+
+// Mint a short-lived (60s) one-shot ticket that the desktop activity agent
+// can exchange for a full session, so we never put accessToken/refreshToken
+// directly into a deep-link URL. Only EMPLOYEE and MANAGER may use the agent.
+const AGENT_ALLOWED_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER];
+
+exports.agentLaunchTicket = asyncHandler(async (req, res) => {
+  if (!AGENT_ALLOWED_ROLES.includes(req.user.role)) {
+    throw new HttpError(403, 'Only employees and managers can launch the activity agent');
+  }
+  const ticket = signAgentLaunchTicket(req.user);
+  res.json({ ticket, expiresInSeconds: 60 });
+});
+
+exports.agentExchange = asyncHandler(async (req, res) => {
+  const { ticket } = req.body || {};
+  if (!ticket) throw new HttpError(400, 'Missing ticket');
+  let payload;
+  try { payload = verifyAgentLaunchTicket(ticket); }
+  catch { throw new HttpError(401, 'Invalid or expired agent-launch ticket'); }
+
+  const user = await User.findById(payload.sub);
+  if (!user || !user.isActive) throw new HttpError(401, 'Invalid session');
+  if (!AGENT_ALLOWED_ROLES.includes(user.role)) {
+    throw new HttpError(403, 'Only employees and managers can launch the activity agent');
+  }
+  let organization = null;
+  if (user.organizationId) organization = await Organization.findById(user.organizationId);
+  assertOrganizationCanLogin(user, organization);
+
+  const accessToken = signAccessToken(user);
+  const refreshToken = signRefreshToken(user);
+  res.json({ user: user.toSafeJSON(), organization, accessToken, refreshToken });
 });
