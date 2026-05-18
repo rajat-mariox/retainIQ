@@ -40,8 +40,6 @@ function renderLogin() {
 }
 
 function renderAgent() {
-  const isWorking = ['Working', 'Idle'].includes(state.status);
-  const isBreak = state.status === 'Break';
   const isEnded = state.status === 'Ended';
   app.innerHTML = `
     <section class="shell">
@@ -64,9 +62,6 @@ function renderAgent() {
 
       <div class="controls">
         <button id="start" ${!isEnded ? 'disabled' : ''}>Start Work</button>
-        <button id="break" ${!isWorking ? 'disabled' : ''}>Break</button>
-        <button id="resume" ${!isBreak ? 'disabled' : ''}>Resume</button>
-        <button id="end" ${isEnded ? 'disabled' : ''}>End Work</button>
       </div>
 
       <div class="panel subtle">
@@ -78,9 +73,6 @@ function renderAgent() {
     </section>
   `;
   bindAction('start', window.retainiq.start);
-  bindAction('break', window.retainiq.break);
-  bindAction('resume', window.retainiq.resume);
-  bindAction('end', window.retainiq.end);
   bindAction('logout', window.retainiq.logout);
 }
 

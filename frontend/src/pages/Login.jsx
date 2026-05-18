@@ -83,9 +83,12 @@ export default function Login() {
       </p>
       <div className="mt-6 p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-ink-300 space-y-1">
         <p className="font-medium text-ink-200 mb-1.5">Demo accounts (after seed):</p>
-        <p>HR Admin: <code className="text-iris-300">hr@acme.test</code> / <code className="text-iris-300">HrPass!234</code></p>
-        <p>Manager: <code className="text-iris-300">manager1@acme.test</code> / <code className="text-iris-300">ManagerPass!234</code></p>
-        <p>Employee: <code className="text-iris-300">emp1@acme.test</code> / <code className="text-iris-300">EmployeePass!234</code></p>
+        <p>Super Admin: <code className="text-iris-300">super@retainiq.dev</code> / <code className="text-iris-300">SuperPass!234</code></p>
+        <p>Org Admin: <code className="text-iris-300">admin@cravix.test</code> / <code className="text-iris-300">AdminPass!234</code></p>
+        <p>HR Admin: <code className="text-iris-300">hr@cravix.test</code> / <code className="text-iris-300">HrPass!234</code></p>
+        <p>Manager: <code className="text-iris-300">manager@cravix.test</code> / <code className="text-iris-300">ManagerPass!234</code></p>
+        <p>Employee 1: <code className="text-iris-300">emp1@cravix.test</code> / <code className="text-iris-300">EmployeePass!234</code></p>
+        <p>Employee 2: <code className="text-iris-300">emp2@cravix.test</code> / <code className="text-iris-300">EmployeePass!234</code></p>
       </div>
     </div>
   );

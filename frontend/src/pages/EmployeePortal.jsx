@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, MessageSquare, CheckSquare } from 'lucide-react';
+import { Coffee, Heart, MessageSquare, CheckSquare, Play, RotateCcw, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
-import { pulseService } from '../services';
+import { localAgentService, pulseService } from '../services';
 import EmployeeTransparencyPanel from '../components/EmployeeTransparencyPanel';
 
 export function EmployeePortal() {
@@ -31,6 +31,8 @@ export function EmployeePortal() {
         </div>
       </div>
 
+      <WorkSessionControls />
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <a href="/portal/tasks" className="glass p-5 hover:bg-white/[0.04] transition group">
           <div className="w-10 h-10 rounded-xl bg-iris-400/15 border border-iris-400/30 flex items-center justify-center mb-3">
@@ -56,6 +58,100 @@ export function EmployeePortal() {
       </div>
 
       <EmployeeTransparencyPanel />
+    </div>
+  );
+}
+
+function WorkSessionControls() {
+  const [agent, setAgent] = useState({ reachable: false, status: 'Offline' });
+  const [loadingAction, setLoadingAction] = useState('');
+
+  const refreshAgent = async ({ quiet = false } = {}) => {
+    try {
+      const data = await localAgentService.health();
+      setAgent({ reachable: true, ...data });
+    } catch {
+      setAgent({ reachable: false, status: 'Offline' });
+      if (!quiet) toast.error('Activity Agent is not running');
+    }
+  };
+
+  useEffect(() => {
+    refreshAgent({ quiet: true });
+    const timer = setInterval(() => refreshAgent({ quiet: true }), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const runAction = async (key, action, successMessage) => {
+    setLoadingAction(key);
+    try {
+      const data = await action();
+      setAgent({ reachable: true, ...(data.state || data) });
+      toast.success(successMessage);
+    } catch (err) {
+      toast.error(err.message || 'Activity Agent is not available');
+      refreshAgent({ quiet: true });
+    } finally {
+      setLoadingAction('');
+    }
+  };
+
+  const status = agent.status || 'Offline';
+  const isWorking = ['Working', 'Idle'].includes(status);
+  const isBreak = status === 'Break';
+  const isEnded = status === 'Ended' || status === 'Offline';
+  const actionPending = Boolean(loadingAction);
+  const dotClass = isWorking
+    ? 'bg-mint-300 shadow-[0_0_18px_rgba(125,228,190,0.55)]'
+    : isBreak
+      ? 'bg-peach-300'
+      : 'bg-rose-300';
+
+  return (
+    <div className="glass p-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <span className={`h-3 w-3 rounded-full ${dotClass}`} />
+          <div>
+            <p className="text-xs uppercase tracking-wider text-ink-400">Work session</p>
+            <p className="text-xl font-semibold text-ink-100">{status}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={!agent.reachable || !isWorking || actionPending}
+            onClick={() => runAction('break', localAgentService.break, 'Break started')}
+          >
+            <Coffee size={16} /> Break
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={!agent.reachable || !isBreak || actionPending}
+            onClick={() => runAction('resume', localAgentService.resume, 'Work resumed')}
+          >
+            <RotateCcw size={16} /> Resume
+          </button>
+          <button
+            type="button"
+            className="btn-danger"
+            disabled={!agent.reachable || isEnded || actionPending}
+            onClick={() => runAction('end', localAgentService.end, 'Work ended')}
+          >
+            <Square size={16} /> End Work
+          </button>
+        </div>
+      </div>
+
+      {!agent.reachable && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-sm text-ink-300">
+          <Play size={15} className="text-iris-300" />
+          Open Activity Agent and click Start Work.
+        </div>
+      )}
     </div>
   );
 }

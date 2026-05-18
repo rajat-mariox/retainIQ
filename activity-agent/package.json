@@ -4,11 +4,44 @@
   "description": "RetainIQ Activity Agent",
   "main": "src/main.js",
   "license": "ISC",
+
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
     "build:win": "electron-builder --win"
   },
+
+  "build": {
+    "appId": "com.retainiq.agent",
+    "productName": "RetainIQ Activity Agent",
+
+    "directories": {
+      "output": "dist"
+    },
+
+    "files": [
+      "src/**/*",
+      "config.js",
+      "package.json"
+    ],
+
+    "win": {
+      "target": "nsis"
+    },
+
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+
+    "protocols": [
+      {
+        "name": "RetainIQ Agent",
+        "schemes": ["retainiq-agent"]
+      }
+    ]
+  },
+
   "dependencies": {
     "active-win": "^9.0.0",
     "axios": "^1.16.0",
@@ -16,6 +49,7 @@
     "screenshot-desktop": "^1.15.4",
     "uiohook-napi": "^1.5.5"
   },
+
   "devDependencies": {
     "electron": "^30.5.1",
     "electron-builder": "^26.8.1"
