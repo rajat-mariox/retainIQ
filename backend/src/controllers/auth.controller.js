@@ -1,4 +1,6 @@
 const { z } = require('zod');
+const fs = require('fs');
+const path = require('path');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { HttpError } = require('../middlewares/errorHandler');
 const {
@@ -131,6 +133,8 @@ exports.me = asyncHandler(async (req, res) => {
 // can exchange for a full session, so we never put accessToken/refreshToken
 // directly into a deep-link URL. Only EMPLOYEE and MANAGER may use the agent.
 const AGENT_ALLOWED_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER];
+const AGENT_INSTALLER_FILENAME = 'RetainIQ-Activity-Agent-Setup.exe';
+const AGENT_INSTALLER_PATH = path.resolve(__dirname, '..', '..', 'static', 'downloads', AGENT_INSTALLER_FILENAME);
 
 exports.agentLaunchTicket = asyncHandler(async (req, res) => {
   if (!AGENT_ALLOWED_ROLES.includes(req.user.role)) {
@@ -138,6 +142,33 @@ exports.agentLaunchTicket = asyncHandler(async (req, res) => {
   }
   const ticket = signAgentLaunchTicket(req.user);
   res.json({ ticket, expiresInSeconds: 60 });
+});
+
+exports.agentInstallerTicket = asyncHandler(async (req, res) => {
+  if (!AGENT_ALLOWED_ROLES.includes(req.user.role)) {
+    throw new HttpError(403, 'Only employees and managers can download the activity agent');
+  }
+  const ticket = signAgentLaunchTicket(req.user);
+  res.json({ ticket, expiresInSeconds: 60 });
+});
+
+exports.downloadAgentInstaller = asyncHandler(async (req, res) => {
+  const { ticket } = req.query || {};
+  let payload;
+  try { payload = verifyAgentLaunchTicket(ticket); }
+  catch { throw new HttpError(401, 'Invalid or expired download ticket'); }
+
+  if (!AGENT_ALLOWED_ROLES.includes(payload.role)) {
+    throw new HttpError(403, 'Only employees and managers can download the activity agent');
+  }
+  if (!fs.existsSync(AGENT_INSTALLER_PATH)) {
+    throw new HttpError(404, 'Activity Agent installer is not available');
+  }
+
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+  res.download(AGENT_INSTALLER_PATH, AGENT_INSTALLER_FILENAME);
 });
 
 exports.agentExchange = asyncHandler(async (req, res) => {

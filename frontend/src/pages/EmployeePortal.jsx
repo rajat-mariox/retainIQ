@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
 import { localAgentService, pulseService } from '../services';
 import EmployeeTransparencyPanel from '../components/EmployeeTransparencyPanel';
+import ActivityAgentDownloadCard from '../components/ActivityAgentDownloadCard';
 
 export function EmployeePortal() {
   const user = useAuthStore((s) => s.user);
@@ -32,6 +33,8 @@ export function EmployeePortal() {
       </div>
 
       <WorkSessionControls />
+
+      <ActivityAgentDownloadCard />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <a href="/portal/tasks" className="glass p-5 hover:bg-white/[0.04] transition group">
