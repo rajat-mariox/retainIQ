@@ -6,6 +6,9 @@ export const authService = {
   me: () => api.get('/auth/me').then((r) => r.data),
   logout: () => api.post('/auth/logout').then((r) => r.data),
   agentLaunchTicket: () => api.post('/auth/agent-launch-ticket').then((r) => r.data),
+  agentInstallerTicket: () => api.post('/auth/agent-installer-ticket').then((r) => r.data),
+  agentInstallerUrl: (ticket) =>
+    `${api.defaults.baseURL}/auth/agent-installer/RetainIQ-Activity-Agent-Setup.exe?ticket=${encodeURIComponent(ticket)}`,
 };
 
 export const employeeService = {
