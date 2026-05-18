@@ -12,6 +12,12 @@ const config = require('../config');
 // loopback only, so only processes on this machine can reach it.
 const IPC_PORT = 48723;
 
+function isAllowedIpcOrigin(origin) {
+  if (!origin) return false;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return (config.WEB_APP_ORIGINS || []).includes(origin);
+}
+
 // active-win v9+ is ESM-only and exports `activeWindow` (no default export).
 // Resolve the module once and reuse the function reference.
 let activeWinFn = null;
@@ -608,6 +614,9 @@ async function startWorkSession() {
   pendingSync = freshSyncBuffer();
   startTimers();
   emitState();
+  if (win && !win.isDestroyed()) {
+    win.hide();
+  }
   return data;
 }
 
@@ -683,12 +692,13 @@ let ipcServer = null;
 function startIpcServer() {
   if (ipcServer) return;
   ipcServer = http.createServer((req, res) => {
-    // CORS — only allow localhost dev origins. The server itself is bound to
-    // loopback below, so this is just defense-in-depth.
+    // CORS for local dev and configured hosted web origins. The server itself
+    // is bound to loopback below, so only this machine can reach it.
     const origin = req.headers.origin || '';
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    if (isAllowedIpcOrigin(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'content-type');

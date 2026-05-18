@@ -36,6 +36,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
     ports:
       - "5000:5000"
+    volumes:
+      - ./backend/uploads:/app/uploads
 
   frontend:
     build:

@@ -49,6 +49,10 @@ app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
   setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
 }));
+app.use('/api/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
+  setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+}));
+
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200 });
 app.use('/api/', apiLimiter);

@@ -11,7 +11,7 @@ import ProductivityBadge from '../components/ProductivityBadge';
 import { LoadingSpinner } from '../components/UIStates';
 import { activityService, employeeService, productivityService } from '../services';
 
-const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 
 function minutesLabel(value = 0) {
   const hours = Math.floor(value / 60);
@@ -22,7 +22,9 @@ function minutesLabel(value = 0) {
 
 function imageUrl(path) {
   if (!path) return '';
-  return path.startsWith('http') ? path : `${API_ORIGIN}${path}`;
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('/uploads/')) return `${API_BASE}${path}`;
+  return path;
 }
 
 export default function EmployeeActivity() {
