@@ -225,6 +225,18 @@ function emitState() {
   });
 }
 
+function agentState() {
+  return {
+    authenticated: Boolean(auth?.accessToken),
+    user: auth?.user,
+    status,
+    session,
+    today,
+    lastScreenshotAt,
+    config,
+  };
+}
+
 function classifyApp(appName = '', title = '') {
   const text = `${appName} ${title}`.toLowerCase();
   if (/(code|visual studio|terminal|github|jira|notion|figma|slack|teams|excel|sheets|docs|chrome|edge)/.test(text)) return 'productive';
@@ -586,6 +598,36 @@ async function endWorkDay() {
   return { session: sessionData, endDay: endDayResult };
 }
 
+async function startWorkSession() {
+  await loadOrgSettings();
+  const { data } = await api().post('/activity/session/start', {});
+  session = data;
+  status = 'Working';
+  lastInputAt = Date.now();
+  today = { activeMinutes: 0, idleMinutes: 0, breakMinutes: 0 };
+  pendingSync = freshSyncBuffer();
+  startTimers();
+  emitState();
+  return data;
+}
+
+async function startBreakSession() {
+  const { data } = await api().post('/activity/session/break', {});
+  session = data;
+  status = 'Break';
+  emitState();
+  return data;
+}
+
+async function resumeWorkSession() {
+  const { data } = await api().post('/activity/session/resume', {});
+  session = data;
+  status = 'Working';
+  lastInputAt = Date.now();
+  emitState();
+  return data;
+}
+
 // Triggered by retainiq-agent://logout from the web app — finalize any
 // active work session, drop local auth, then quit the agent process.
 async function handleRemoteLogout() {
@@ -662,9 +704,28 @@ function startIpcServer() {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({
         ok: true,
-        authenticated: Boolean(auth?.accessToken),
-        status,
+        ...agentState(),
       }));
+      return;
+    }
+
+    const actionRoutes = {
+      '/break': startBreakSession,
+      '/resume': resumeWorkSession,
+      '/end': endWorkDay,
+    };
+
+    if (req.method === 'POST' && actionRoutes[req.url]) {
+      res.setHeader('content-type', 'application/json');
+      actionRoutes[req.url]()
+        .then((result) => {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, result, state: agentState() }));
+        })
+        .catch((err) => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: err.message || 'Action failed', state: agentState() }));
+        });
       return;
     }
 
@@ -703,40 +764,22 @@ ipcMain.handle('auth:logout', async () => {
 });
 
 ipcMain.handle('agent:start', async () => {
-  await loadOrgSettings();
-  const { data } = await api().post('/activity/session/start', {});
-  session = data;
-  status = 'Working';
-  lastInputAt = Date.now();
-  today = { activeMinutes: 0, idleMinutes: 0, breakMinutes: 0 };
-  pendingSync = freshSyncBuffer();
-  startTimers();
-  emitState();
-  return data;
+  return startWorkSession();
 });
 
 ipcMain.handle('agent:break', async () => {
-  const { data } = await api().post('/activity/session/break', {});
-  session = data;
-  status = 'Break';
-  emitState();
-  return data;
+  return startBreakSession();
 });
 
 ipcMain.handle('agent:resume', async () => {
-  const { data } = await api().post('/activity/session/resume', {});
-  session = data;
-  status = 'Working';
-  lastInputAt = Date.now();
-  emitState();
-  return data;
+  return resumeWorkSession();
 });
 
 ipcMain.handle('agent:end', async () => endWorkDay());
 
 ipcMain.handle('agent:get-state', async () => {
   emitState();
-  return { authenticated: Boolean(auth?.accessToken), user: auth?.user, status, session, today, lastScreenshotAt, config };
+  return agentState();
 });
 
 // Register retainiq-agent:// so the web app can deep-link the user back into

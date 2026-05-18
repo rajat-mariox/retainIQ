@@ -13,20 +13,28 @@ export default function Topbar() {
   const { user, organization, logout } = useAuthStore();
   const [open, setOpen] = useState(false);
 
-  const handleLogout = () => {
-    // Tell the desktop activity agent (if running) to shut down too, so the
-    // web session and the agent session stay in sync. We hit the agent's
-    // loopback IPC server — silent, no Chrome protocol prompt. keepalive
-    // ensures the request survives the SPA navigation that follows.
-    if (user?.role === 'EMPLOYEE' || user?.role === 'MANAGER') {
+ const handleLogout = () => {
+  if (user?.role === 'EMPLOYEE' || user?.role === 'MANAGER') {
+    try {
       fetch('http://127.0.0.1:48723/logout', {
         method: 'POST',
         keepalive: true,
-      }).catch(() => { /* agent isn't running — fine */ });
+        mode: 'no-cors',
+      }).catch(() => {
+        window.location.href = 'retainiq-agent://logout';
+      });
+
+      setTimeout(() => {
+        window.location.href = 'retainiq-agent://logout';
+      }, 300);
+    } catch (e) {
+      window.location.href = 'retainiq-agent://logout';
     }
-    logout();
-    navigate('/login');
-  };
+  }
+
+  logout();
+  navigate('/login');
+};
 
   return (
     <header className="relative z-30 m-4 mb-0 flex items-center gap-4">

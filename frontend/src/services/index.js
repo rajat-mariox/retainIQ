@@ -88,6 +88,28 @@ export const activityService = {
   aiSummary: (employeeId, params = {}) => api.get(`/activity/${employeeId}/ai-summary`, { params }).then((r) => r.data),
 };
 
+const AGENT_IPC_URL = 'http://127.0.0.1:48723';
+
+async function agentRequest(path, options = {}) {
+  const res = await fetch(`${AGENT_IPC_URL}${path}`, {
+    ...options,
+    headers: {
+      'content-type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || 'Activity agent is not available');
+  return data;
+}
+
+export const localAgentService = {
+  health: () => agentRequest('/health'),
+  break: () => agentRequest('/break', { method: 'POST' }),
+  resume: () => agentRequest('/resume', { method: 'POST' }),
+  end: () => agentRequest('/end', { method: 'POST' }),
+};
+
 export const productivityService = {
   dashboard: (params = {}) => api.get('/productivity/dashboard', { params }).then((r) => r.data),
   leaderboard: (params) => api.get('/productivity/leaderboard', { params }).then((r) => r.data),
