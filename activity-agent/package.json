@@ -24,6 +24,32 @@
       "config.js",
       "package.json"
     ],
+    "extraFiles": [
+      {
+        "from": "node_modules/electron/dist/ffmpeg.dll",
+        "to": "ffmpeg.dll"
+      },
+      {
+        "from": "node_modules/electron/dist/d3dcompiler_47.dll",
+        "to": "d3dcompiler_47.dll"
+      },
+      {
+        "from": "node_modules/electron/dist/vulkan-1.dll",
+        "to": "vulkan-1.dll"
+      },
+      {
+        "from": "node_modules/electron/dist/vk_swiftshader.dll",
+        "to": "vk_swiftshader.dll"
+      },
+      {
+        "from": "node_modules/electron/dist/vk_swiftshader_icd.json",
+        "to": "vk_swiftshader_icd.json"
+      },
+      {
+        "from": "node_modules/electron/dist/chrome_200_percent.pak",
+        "to": "chrome_200_percent.pak"
+      }
+    ],
 
     "win": {
       "target": "nsis"

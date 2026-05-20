@@ -1,14 +1,34 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { authService } from '../services';
+import { authService, localAgentService } from '../services';
 import { useAuthStore } from '../store/authStore';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function Login() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+
+  const downloadActivityAgent = async () => {
+    try {
+      const { ticket } = await authService.agentInstallerTicket();
+      const link = document.createElement('a');
+      link.href = authService.agentInstallerUrl(ticket);
+      link.download = 'RetainIQ-Activity-Agent-Setup.exe';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success('Activity Agent download started');
+      return true;
+    } catch (err) {
+      console.warn('Activity agent download failed:', err);
+      toast.error(err.response?.data?.error || 'Could not download Activity Agent');
+      return false;
+    }
+  };
 
   const launchActivityAgent = async () => {
     try {
@@ -30,6 +50,30 @@ export default function Login() {
     }
   };
 
+  const isActivityAgentReachable = async () => {
+    try {
+      await localAgentService.health();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const waitForActivityAgent = async () => {
+    for (let i = 0; i < 8; i += 1) {
+      if (await isActivityAgentReachable()) return true;
+      await sleep(750);
+    }
+    return false;
+  };
+
+  const ensureActivityAgentAvailable = async () => {
+    if (await isActivityAgentReachable()) return true;
+    await launchActivityAgent();
+    if (await waitForActivityAgent()) return true;
+    return downloadActivityAgent();
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -43,11 +87,11 @@ export default function Login() {
                                           : '/dashboard';
       toast.success(`Welcome back, ${data.user.name}`);
       if (role === 'EMPLOYEE' || role === 'MANAGER') {
-        await launchActivityAgent();
+        await ensureActivityAgentAvailable();
         // Give Chrome a moment to surface the protocol-open prompt before
         // we SPA-navigate away — without this delay the route change can
         // cancel the pending external-protocol dialog.
-        setTimeout(() => navigate(dest), 600);
+        setTimeout(() => navigate(dest), 800);
       } else {
         navigate(dest);
       }

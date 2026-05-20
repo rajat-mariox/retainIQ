@@ -6,7 +6,6 @@ import { employeeService } from '../services';
 import { LoadingSpinner } from '../components/UIStates';
 import StatCard from '../components/StatCard';
 import RiskBadge from '../components/RiskBadge';
-import ActivityAgentDownloadCard from '../components/ActivityAgentDownloadCard';
 
 export default function ManagerDashboard() {
   const [team, setTeam] = useState([]);
@@ -41,8 +40,6 @@ export default function ManagerDashboard() {
         <h1 className="text-3xl font-bold text-ink-100 tracking-tight">Team Dashboard</h1>
         <p className="text-sm text-ink-400 mt-1.5">Risk and engagement signals for your direct reports</p>
       </div>
-
-      <ActivityAgentDownloadCard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard tone="iris" label="Team size" value={team.length} sub="Direct reports" icon={Users} />
