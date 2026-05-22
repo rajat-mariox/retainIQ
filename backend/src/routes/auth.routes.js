@@ -10,6 +10,7 @@ router.get('/me', authenticate, ctrl.me);
 router.post('/agent-launch-ticket', authenticate, ctrl.agentLaunchTicket);
 router.post('/agent-installer-ticket', authenticate, ctrl.agentInstallerTicket);
 router.get('/agent-installer/RetainIQ-Activity-Agent-Setup.exe', ctrl.downloadAgentInstaller);
+router.get('/agent-installer/RetainIQ-Activity-Agent-mac.dmg', ctrl.downloadAgentInstaller);
 router.get('/agent-installer', ctrl.downloadAgentInstaller);
 router.post('/agent-exchange', ctrl.agentExchange);
 

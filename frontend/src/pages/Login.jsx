@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { authService, localAgentService } from '../services';
+import { authService, getAgentInstallerFilename, localAgentService } from '../services';
 import { useAuthStore } from '../store/authStore';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,7 +17,7 @@ export default function Login() {
       const { ticket } = await authService.agentInstallerTicket();
       const link = document.createElement('a');
       link.href = authService.agentInstallerUrl(ticket);
-      link.download = 'RetainIQ-Activity-Agent-Setup.exe';
+      link.download = getAgentInstallerFilename();
       document.body.appendChild(link);
       link.click();
       link.remove();
