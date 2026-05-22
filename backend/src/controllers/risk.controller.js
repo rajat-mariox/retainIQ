@@ -9,6 +9,7 @@ const Organization = require('../models/Organization');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { calculateRisk } = require('../services/riskScoringService');
+const { refreshActivityRiskSignals } = require('../services/activityRiskSignalService');
 const aiService = require('../services/aiRecommendationService');
 const { RISK_CATEGORIES, ROLES } = require('../config/constants');
 
@@ -16,6 +17,8 @@ async function computeForEmployee(orgId, employeeId, options = {}) {
   const employee = await Employee.findOne({ _id: employeeId, organizationId: orgId })
     .populate('departmentId', 'name');
   if (!employee) throw new HttpError(404, 'Employee not found');
+
+  await refreshActivityRiskSignals({ organizationId: orgId, employeeId });
 
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const [signals, pulses, priorAssessments, org] = await Promise.all([

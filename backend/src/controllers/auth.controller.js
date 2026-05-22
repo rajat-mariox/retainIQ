@@ -133,8 +133,26 @@ exports.me = asyncHandler(async (req, res) => {
 // can exchange for a full session, so we never put accessToken/refreshToken
 // directly into a deep-link URL. Only EMPLOYEE and MANAGER may use the agent.
 const AGENT_ALLOWED_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER];
-const AGENT_INSTALLER_FILENAME = 'RetainIQ-Activity-Agent-Setup.exe';
-const AGENT_INSTALLER_PATH = path.resolve(__dirname, '..', '..', 'static', 'downloads', AGENT_INSTALLER_FILENAME);
+const AGENT_INSTALLERS = {
+  win: {
+    filename: 'RetainIQ-Activity-Agent-Setup.exe',
+    contentType: 'application/vnd.microsoft.portable-executable',
+  },
+  mac: {
+    filename: 'RetainIQ-Activity-Agent-mac.dmg',
+    contentType: 'application/x-apple-diskimage',
+  },
+};
+
+function resolveAgentInstaller(platform = 'win') {
+  const key = AGENT_INSTALLERS[platform] ? platform : 'win';
+  const installer = AGENT_INSTALLERS[key];
+  return {
+    ...installer,
+    platform: key,
+    filePath: path.resolve(__dirname, '..', '..', 'static', 'downloads', installer.filename),
+  };
+}
 
 exports.agentLaunchTicket = asyncHandler(async (req, res) => {
   if (!AGENT_ALLOWED_ROLES.includes(req.user.role)) {
@@ -153,7 +171,7 @@ exports.agentInstallerTicket = asyncHandler(async (req, res) => {
 });
 
 exports.downloadAgentInstaller = asyncHandler(async (req, res) => {
-  const { ticket } = req.query || {};
+  const { ticket, platform } = req.query || {};
   let payload;
   try { payload = verifyAgentLaunchTicket(ticket); }
   catch { throw new HttpError(401, 'Invalid or expired download ticket'); }
@@ -161,14 +179,16 @@ exports.downloadAgentInstaller = asyncHandler(async (req, res) => {
   if (!AGENT_ALLOWED_ROLES.includes(payload.role)) {
     throw new HttpError(403, 'Only employees and managers can download the activity agent');
   }
-  if (!fs.existsSync(AGENT_INSTALLER_PATH)) {
-    throw new HttpError(404, 'Activity Agent installer is not available');
+
+  const installer = resolveAgentInstaller(platform);
+  if (!fs.existsSync(installer.filePath)) {
+    throw new HttpError(404, `${installer.platform === 'mac' ? 'macOS' : 'Windows'} Activity Agent installer is not available`);
   }
 
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
-  res.download(AGENT_INSTALLER_PATH, AGENT_INSTALLER_FILENAME);
+  res.setHeader('Content-Type', installer.contentType);
+  res.download(installer.filePath, installer.filename);
 });
 
 exports.agentExchange = asyncHandler(async (req, res) => {

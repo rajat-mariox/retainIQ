@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "build:win": "electron-builder --win"
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:mac:dir": "electron-builder --mac dir"
   },
 
   "build": {
@@ -24,35 +26,48 @@
       "config.js",
       "package.json"
     ],
-    "extraFiles": [
-      {
-        "from": "node_modules/electron/dist/ffmpeg.dll",
-        "to": "ffmpeg.dll"
-      },
-      {
-        "from": "node_modules/electron/dist/d3dcompiler_47.dll",
-        "to": "d3dcompiler_47.dll"
-      },
-      {
-        "from": "node_modules/electron/dist/vulkan-1.dll",
-        "to": "vulkan-1.dll"
-      },
-      {
-        "from": "node_modules/electron/dist/vk_swiftshader.dll",
-        "to": "vk_swiftshader.dll"
-      },
-      {
-        "from": "node_modules/electron/dist/vk_swiftshader_icd.json",
-        "to": "vk_swiftshader_icd.json"
-      },
-      {
-        "from": "node_modules/electron/dist/chrome_200_percent.pak",
-        "to": "chrome_200_percent.pak"
-      }
-    ],
-
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "extraFiles": [
+        {
+          "from": "node_modules/electron/dist/ffmpeg.dll",
+          "to": "ffmpeg.dll"
+        },
+        {
+          "from": "node_modules/electron/dist/d3dcompiler_47.dll",
+          "to": "d3dcompiler_47.dll"
+        },
+        {
+          "from": "node_modules/electron/dist/vulkan-1.dll",
+          "to": "vulkan-1.dll"
+        },
+        {
+          "from": "node_modules/electron/dist/vk_swiftshader.dll",
+          "to": "vk_swiftshader.dll"
+        },
+        {
+          "from": "node_modules/electron/dist/vk_swiftshader_icd.json",
+          "to": "vk_swiftshader_icd.json"
+        },
+        {
+          "from": "node_modules/electron/dist/chrome_200_percent.pak",
+          "to": "chrome_200_percent.pak"
+        }
+      ]
+    },
+
+    "mac": {
+      "target": ["dmg", "zip"],
+      "artifactName": "RetainIQ-Activity-Agent-mac.${ext}",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSCameraUsageDescription": "RetainIQ Activity Agent does not use the camera.",
+        "NSMicrophoneUsageDescription": "RetainIQ Activity Agent does not use the microphone.",
+        "NSAppleEventsUsageDescription": "RetainIQ Activity Agent needs permission to read the active application name for work activity summaries.",
+        "NSScreenCaptureDescription": "RetainIQ Activity Agent needs permission to capture periodic work screenshots."
+      }
     },
 
     "nsis": {

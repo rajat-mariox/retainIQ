@@ -68,16 +68,28 @@ function scoreAttendance(signals) {
 
   let stress = 0;
   if (lateArrivals >= 5) { stress += 0.20; factors.push(`${lateArrivals} late arrivals in last 30d`); }
-  else if (lateArrivals >= 3) stress += 0.10;
+  else if (lateArrivals >= 1) {
+    stress += Math.min(0.10, lateArrivals * 0.04);
+    factors.push(`${lateArrivals} late arrival(s) in last 30d`);
+  }
 
   if (earlyLogouts >= 5) { stress += 0.15; factors.push(`${earlyLogouts} early logouts in last 30d`); }
-  else if (earlyLogouts >= 3) stress += 0.07;
+  else if (earlyLogouts >= 1) {
+    stress += Math.min(0.07, earlyLogouts * 0.03);
+    factors.push(`${earlyLogouts} early logout(s) in last 30d`);
+  }
 
   if (absentDays >= 5) { stress += 0.30; factors.push(`${absentDays} absent days in last 30d`); }
-  else if (absentDays >= 3) stress += 0.15;
+  else if (absentDays >= 1) {
+    stress += Math.min(0.15, absentDays * 0.06);
+    factors.push(`${absentDays} low/no-activity day(s) in last 30d`);
+  }
 
   if (leaveFreq >= 8) { stress += 0.20; factors.push(`Elevated leave frequency (${leaveFreq} in 90d)`); }
-  else if (leaveFreq >= 5) stress += 0.10;
+  else if (leaveFreq >= 1) {
+    stress += Math.min(0.10, leaveFreq * 0.025);
+    factors.push(`${leaveFreq} short tracked day(s) in last 90d`);
+  }
 
   if (unexplained >= 2) { stress += 0.25; factors.push(`${unexplained} unexplained absences`); }
 

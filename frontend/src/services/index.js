@@ -1,5 +1,18 @@
 import { api } from './api';
 
+export function getAgentInstallerPlatform() {
+  const platform = window.navigator.userAgentData?.platform || window.navigator.platform || '';
+  const userAgent = window.navigator.userAgent || '';
+  if (/mac/i.test(platform) || /mac os x/i.test(userAgent)) return 'mac';
+  return 'win';
+}
+
+export function getAgentInstallerFilename(platform = getAgentInstallerPlatform()) {
+  return platform === 'mac'
+    ? 'RetainIQ-Activity-Agent-mac.dmg'
+    : 'RetainIQ-Activity-Agent-Setup.exe';
+}
+
 export const authService = {
   registerOrg: (payload) => api.post('/auth/register-org', payload).then((r) => r.data),
   login: (payload) => api.post('/auth/login', payload).then((r) => r.data),
@@ -7,8 +20,8 @@ export const authService = {
   logout: () => api.post('/auth/logout').then((r) => r.data),
   agentLaunchTicket: () => api.post('/auth/agent-launch-ticket').then((r) => r.data),
   agentInstallerTicket: () => api.post('/auth/agent-installer-ticket').then((r) => r.data),
-  agentInstallerUrl: (ticket) =>
-    `${api.defaults.baseURL}/auth/agent-installer/RetainIQ-Activity-Agent-Setup.exe?ticket=${encodeURIComponent(ticket)}`,
+  agentInstallerUrl: (ticket, platform = getAgentInstallerPlatform()) =>
+    `${api.defaults.baseURL}/auth/agent-installer/${getAgentInstallerFilename(platform)}?platform=${encodeURIComponent(platform)}&ticket=${encodeURIComponent(ticket)}`,
 };
 
 export const employeeService = {

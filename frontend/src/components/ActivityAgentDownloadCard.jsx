@@ -1,12 +1,14 @@
 import { Download, MonitorUp, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { authService } from '../services';
+import { authService, getAgentInstallerPlatform } from '../services';
 import { useAuthStore } from '../store/authStore';
 
 const ALLOWED_ROLES = ['EMPLOYEE', 'MANAGER'];
 export default function ActivityAgentDownloadCard() {
   const role = useAuthStore((s) => s.user?.role);
   if (!ALLOWED_ROLES.includes(role)) return null;
+  const platform = getAgentInstallerPlatform();
+  const platformLabel = platform === 'mac' ? 'macOS' : 'Windows';
 
   const downloadInstaller = async () => {
     try {
@@ -28,7 +30,7 @@ export default function ActivityAgentDownloadCard() {
           <div>
             <p className="font-semibold text-ink-100">RetainIQ Activity Agent</p>
             <p className="text-sm text-ink-400 mt-1.5">
-              Install the Windows agent to track work sessions, breaks, app usage, and approved screenshots.
+              Install the {platformLabel} agent to track work sessions, breaks, app usage, and approved screenshots.
             </p>
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs text-ink-300">
               <ShieldCheck size={14} className="text-mint-300" />

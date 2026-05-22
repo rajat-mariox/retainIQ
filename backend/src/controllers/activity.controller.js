@@ -9,9 +9,15 @@ const ActivityEvent = require('../models/ActivityEvent');
 const ScreenshotLog = require('../models/ScreenshotLog');
 const AppUsageLog = require('../models/AppUsageLog');
 const Employee = require('../models/Employee');
+const Organization = require('../models/Organization');
+const Signal = require('../models/Signal');
+const PulseSurvey = require('../models/PulseSurvey');
+const RiskAssessment = require('../models/RiskAssessment');
 const { ROLES } = require('../config/constants');
 const { assertEmployeeAccess, resolveSubmittingEmployee } = require('../services/activityAccessService');
 const { calculateAndPersistActivityScore } = require('../services/activityProductivityService');
+const { calculateRisk } = require('../services/riskScoringService');
+const { refreshActivityRiskSignals } = require('../services/activityRiskSignalService');
 const { generateActivitySummary } = require('../services/productivityAIService');
 const ProductivityScore = require('../models/ProductivityScore');
 
@@ -426,6 +432,229 @@ const endDaySchema = z.object({
   breakMinutes: z.number().min(0).default(0),
 });
 
+async function upsertActivityRiskSignal(signal) {
+  return Signal.findOneAndUpdate(
+    {
+      organizationId: signal.organizationId,
+      employeeId: signal.employeeId,
+      category: signal.category,
+      metric: signal.metric,
+      periodStart: signal.periodStart,
+    },
+    { $set: signal },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+}
+
+async function emitActivityRiskSignals({ organizationId, employeeId, date, scoreDoc, activityLog }) {
+  const currentScore = scoreDoc?.score;
+  if (!Number.isFinite(currentScore)) return [];
+
+  const previousScores = await ProductivityScore.find({
+    organizationId,
+    employeeId,
+    period: 'daily',
+    date: { $lt: date },
+  })
+    .sort({ date: -1 })
+    .limit(7)
+    .select('score');
+
+  const signals = [];
+  const periodEnd = new Date(date);
+  periodEnd.setDate(periodEnd.getDate() + 1);
+
+  if (previousScores.length >= 3) {
+    const avg = previousScores.reduce((sum, item) => sum + (item.score || 0), 0) / previousScores.length;
+    const declinePct = Math.max(0, Math.min(100, Math.round(100 - (currentScore / Math.max(1, avg)) * 100)));
+    const trend = Number(((currentScore - avg) / 100).toFixed(2));
+
+    if (declinePct >= 20) {
+      signals.push({
+        organizationId,
+        employeeId,
+        source: 'system',
+        category: 'behavioral',
+        metric: 'activity_decline_pct',
+        value: declinePct,
+        unit: 'percent',
+        periodStart: date,
+        periodEnd,
+        note: `Activity agent productivity score declined ${declinePct}% vs recent average.`,
+      });
+    }
+
+    if (trend <= -0.2) {
+      signals.push({
+        organizationId,
+        employeeId,
+        source: 'system',
+        category: 'performance',
+        metric: 'productivity_trend',
+        value: trend,
+        unit: 'ratio',
+        periodStart: date,
+        periodEnd,
+        note: 'Activity agent daily productivity trend is below recent baseline.',
+      });
+    }
+  }
+
+  const totalMinutes = activityLog?.totalLoggedMinutes
+    || activityLog?.totalWorkMinutes
+    || ((activityLog?.activeMinutes || 0) + (activityLog?.idleMinutes || 0) + (activityLog?.breakMinutes || 0));
+  const idleRatio = totalMinutes ? (activityLog?.idleMinutes || 0) / totalMinutes : 0;
+  if (totalMinutes >= 60 && idleRatio >= 0.35) {
+    signals.push({
+      organizationId,
+      employeeId,
+      source: 'system',
+      category: 'behavioral',
+      metric: 'working_pattern_change',
+      value: 1,
+      unit: 'flag',
+      periodStart: date,
+      periodEnd,
+      note: `Activity agent detected elevated idle time (${Math.round(idleRatio * 100)}%).`,
+    });
+  }
+
+  const written = [];
+  for (const signal of signals) written.push(await upsertActivityRiskSignal(signal));
+  return written;
+}
+
+function minutesSinceMidnight(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+async function emitAttendanceRiskSignals({ organizationId, employeeId, date }) {
+  const since30 = new Date(date);
+  since30.setDate(since30.getDate() - 29);
+  const since90 = new Date(date);
+  since90.setDate(since90.getDate() - 89);
+  const periodEnd = new Date(date);
+  periodEnd.setDate(periodEnd.getDate() + 1);
+
+  const [logs30, logs90] = await Promise.all([
+    ActivityLog.find({ organizationId, employeeId, date: { $gte: since30, $lte: date } })
+      .select('date loginTime logoutTime totalLoggedMinutes totalWorkMinutes activeMinutes idleMinutes breakMinutes'),
+    ActivityLog.find({ organizationId, employeeId, date: { $gte: since90, $lte: date } })
+      .select('date totalLoggedMinutes totalWorkMinutes activeMinutes idleMinutes breakMinutes'),
+  ]);
+
+  const workStart = 10 * 60;
+  const workEnd = 18 * 60;
+  const lateGraceMinutes = 15;
+  const earlyGraceMinutes = 30;
+  const absentThresholdMinutes = 60;
+  const shortDayThresholdMinutes = 4 * 60;
+
+  const totalMinutesFor = (log) => log.totalLoggedMinutes
+    || log.totalWorkMinutes
+    || ((log.activeMinutes || 0) + (log.idleMinutes || 0) + (log.breakMinutes || 0));
+
+  const lateArrivals = logs30.filter((log) => {
+    const loginMinutes = minutesSinceMidnight(log.loginTime);
+    return loginMinutes != null && loginMinutes > workStart + lateGraceMinutes;
+  }).length;
+
+  const earlyLogouts = logs30.filter((log) => {
+    const logoutMinutes = minutesSinceMidnight(log.logoutTime);
+    return logoutMinutes != null && logoutMinutes < workEnd - earlyGraceMinutes;
+  }).length;
+
+  const absentDays = logs30.filter((log) => totalMinutesFor(log) < absentThresholdMinutes).length;
+  const leaveFreq = logs90.filter((log) => {
+    const total = totalMinutesFor(log);
+    return total >= absentThresholdMinutes && total < shortDayThresholdMinutes;
+  }).length;
+
+  const metrics = [
+    {
+      metric: 'late_arrivals_30d',
+      value: lateArrivals,
+      note: `Activity agent detected ${lateArrivals} late arrival(s) in the last 30 tracked days.`,
+    },
+    {
+      metric: 'early_logouts_30d',
+      value: earlyLogouts,
+      note: `Activity agent detected ${earlyLogouts} early logout(s) in the last 30 tracked days.`,
+    },
+    {
+      metric: 'absent_days_30d',
+      value: absentDays,
+      note: `Activity agent detected ${absentDays} very low/no-activity tracked day(s) in the last 30 days.`,
+    },
+    {
+      metric: 'leave_freq_90d',
+      value: leaveFreq,
+      note: `Activity agent detected ${leaveFreq} short tracked day(s) in the last 90 days.`,
+    },
+  ];
+
+  const written = [];
+  for (const item of metrics) {
+    written.push(await upsertActivityRiskSignal({
+      organizationId,
+      employeeId,
+      source: 'system',
+      category: 'attendance',
+      metric: item.metric,
+      value: item.value,
+      unit: 'count',
+      periodStart: item.metric.endsWith('_90d') ? since90 : since30,
+      periodEnd,
+      note: item.note,
+    }));
+  }
+  return written;
+}
+
+async function recalculateRiskAfterActivity(organizationId, employeeId) {
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const [employee, signals, pulses, priorAssessments, org] = await Promise.all([
+    Employee.findOne({ _id: employeeId, organizationId }),
+    Signal.find({ organizationId, employeeId, periodEnd: { $gte: ninetyDaysAgo } }),
+    PulseSurvey.find({ organizationId, employeeId }).sort({ createdAt: -1 }).limit(5),
+    RiskAssessment.find({ organizationId, employeeId }).sort({ computedAt: -1 }).limit(3),
+    Organization.findById(organizationId),
+  ]);
+  if (!employee) throw new HttpError(404, 'Employee not found');
+
+  const result = calculateRisk({
+    employee,
+    signals,
+    pulses,
+    priorAssessments,
+    weights: org?.settings?.riskWeights,
+  });
+
+  const assessment = await RiskAssessment.create({
+    organizationId,
+    employeeId,
+    riskScore: result.riskScore,
+    category: result.category,
+    confidence: result.confidence,
+    trend: result.trend,
+    componentScores: result.componentScores,
+    topFactors: result.topFactors,
+    recommendedAction: result.recommendedAction,
+    engineVersion: result.engineVersion,
+  });
+
+  employee.currentRiskScore = result.riskScore;
+  employee.currentRiskCategory = result.category;
+  employee.currentRiskTrend = result.trend;
+  employee.currentRiskUpdatedAt = new Date();
+  await employee.save();
+
+  return assessment;
+}
+
 exports.endDay = asyncHandler(async (req, res) => {
   const data = endDaySchema.parse(req.body);
   const employee = await resolveSubmittingEmployee(req, req.body.employeeId);
@@ -452,13 +681,36 @@ exports.endDay = asyncHandler(async (req, res) => {
   );
 
   let scoreResult = null;
+  let riskSignals = [];
+  let riskAssessment = null;
   try {
     scoreResult = await calculateAndPersistActivityScore(req.organizationId, employee._id, date);
   } catch (err) {
     console.error('[activity] end-day score failed', err.message);
   }
 
-  res.status(200).json({ log, score: scoreResult?.score || null });
+  if (scoreResult?.score != null) {
+    try {
+      const signalResult = await refreshActivityRiskSignals({
+        organizationId: req.organizationId,
+        employeeId: employee._id,
+        date,
+        scoreDoc: scoreResult.score,
+        activityLog: log,
+      });
+      riskSignals = signalResult.total;
+      riskAssessment = await recalculateRiskAfterActivity(req.organizationId, employee._id);
+    } catch (err) {
+      console.error('[activity] risk refresh after end-day failed', err.message);
+    }
+  }
+
+  res.status(200).json({
+    log,
+    score: scoreResult?.score || null,
+    risk: riskAssessment || null,
+    riskSignals,
+  });
 });
 
 // HR-friendly narrative summary for the employee-activity detail page.
